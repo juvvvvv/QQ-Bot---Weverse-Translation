@@ -1,0 +1,250 @@
+import asyncio
+import hashlib
+import io
+import re
+import sys
+import uuid
+from urllib.parse import urlsplit, urlunsplit
+from PIL import Image
+from playwright.async_api import async_playwright
+from . import store
+
+
+def weverse_url(raw, feed=False):
+    value = urlsplit(raw.strip())
+    if value.scheme != 'https' or value.hostname != 'weverse.io' or value.port not in (None, 443) or value.username or value.password:
+        raise ValueError('只接受 https://weverse.io/plave/… 的链接。')
+    if not re.match(r'^/plave(?:/|$)', value.path, re.I):
+        raise ValueError('此机器人只处理 PLAVE 社区。')
+    if not feed and not re.fullmatch(r'/plave/(?:artist|fanpost)/[0-9-]+/?', value.path, re.I):
+        raise ValueError('请提供 PLAVE 帖子详情链接，例如 /plave/artist/数字编号。评论用帖子编号和评论序号处理。')
+    # Share/query tokens must not be persisted in archives or logs.
+    return urlunsplit(('https', 'weverse.io', value.path, '', ''))
+
+
+class Browser:
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.pw = self.context = None
+        self.last_error = ''
+        self.login_state = '尚未验证'
+        self.mode = None
+
+    async def open(self, headed=False):
+        if self.context and self.mode == ('headed' if headed else 'headless'):
+            return self.context
+        if self.context:
+            await self.context.close()
+            self.context = None
+        if not self.pw:
+            self.pw = await async_playwright().start()
+        self.context = await self.pw.chromium.launch_persistent_context(
+            str(store.DATA / 'browser'), headless=not headed,
+            executable_path=__import__('os').environ.get('WEVERSE_BROWSER_EXECUTABLE') or None,
+            viewport={'width': store.settings()['capture_width'], 'height': 1000},
+            device_scale_factor=1, locale='zh-CN',
+        )
+        self.mode = 'headed' if headed else 'headless'
+        return self.context
+
+    async def close(self):
+        async with self.lock:
+            if self.context:
+                await self.context.close()
+                self.context = None
+            if self.pw:
+                await self.pw.stop()
+                self.pw = None
+            self.mode = None
+
+    async def login(self):
+        if sys.platform != 'darwin' and not __import__('os').environ.get('DISPLAY'):
+            raise ValueError('当前机器没有桌面。请在你的 Mac 上启动本项目后点击登录，在弹出的浏览器中手动登录。')
+        async with self.lock:
+            context = await self.open(headed=True)
+            page = context.pages[0] if context.pages else await context.new_page()
+            await page.goto('https://weverse.io/plave/artist', wait_until='domcontentloaded', timeout=60000)
+            self.login_state = '登录窗口已打开；请手动登录，再抓取一条帖子验证'
+            return self.login_state
+
+    async def ready_page(self, url):
+        ctx = await self.open(headed=not store.settings()['headless'])
+        page = await ctx.new_page()
+        await page.set_viewport_size({'width': store.settings()['capture_width'], 'height': 1000})
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            await page.wait_for_timeout(2000)
+            return page
+        except Exception:
+            await page.close()
+            raise
+
+    async def capture(self, url, group=''):
+        url = weverse_url(url)
+        cfg = store.settings()
+        if not all(cfg[k] for k in ('post_selector','text_selector','artist_selector','author_selector')):
+            raise ValueError('网页抓取尚未校准。请在设置中填写帖子、原文、艺人标识和作者 CSS 选择器；也可以先上传截图。')
+        async with self.lock:
+            page = None
+            try:
+                page = await self.ready_page(url)
+                return await self.extract(page, url, group, cfg)
+            except ValueError as exc:
+                self.last_error = str(exc)
+                raise
+            except Exception as exc:
+                self.last_error = '网页读取失败，请检查网络、浏览器安装、登录和 CSS 选择器。'
+                store.event(f'网页读取失败（{type(exc).__name__}），请在 Mac 检查登录或页面校准', 'error')
+                raise ValueError(self.last_error) from exc
+            finally:
+                if page:
+                    await page.close()
+
+    async def extract(self, page, url, group, cfg):
+        """Capture only explicitly matched artist cards. Never guess badge classes."""
+        root = page.locator(cfg['post_selector'])
+        try:
+            await root.first.wait_for(state='visible', timeout=15000)
+        except Exception as exc:
+            if await page.locator('input[type=password]').count() or 'account.weverse.io' in page.url:
+                self.login_state = '登录失效，请重新登录'
+                raise ValueError(self.login_state) from exc
+            raise ValueError('未找到帖子。可能需要登录，或 CSS 选择器已变化，请重新校准。') from exc
+        if await root.count() != 1:
+            raise ValueError('帖子选择器必须只匹配一个帖子卡片。请缩小选择器范围。')
+        if not await root.locator(cfg['artist_selector']).count():
+            raise ValueError('未找到艺人标识，停止抓取。请确认这是 From PLAVE 艺人帖子，并校准标识选择器。')
+        if cfg['expand_selector']:
+            # Only explicit expand controls inside the post/comment cards, no sitewide buttons.
+            scopes = [root]
+            if cfg['comment_selector']:
+                scopes.append(page.locator(cfg['comment_selector']))
+            for scope in scopes:
+                buttons = scope.locator(cfg['expand_selector'])
+                for i in range(min(await buttons.count(), 30)):
+                    button = buttons.nth(i)
+                    if await button.is_visible():
+                        await button.click(timeout=3000)
+                        await page.wait_for_timeout(200)
+        reached_end = False
+        for _ in range(cfg['max_scrolls']):
+            old = await page.evaluate('document.documentElement.scrollHeight')
+            await page.evaluate('window.scrollTo(0,document.documentElement.scrollHeight)')
+            await page.wait_for_timeout(600)
+            new = await page.evaluate('document.documentElement.scrollHeight')
+            if new == old:
+                reached_end = True
+                break
+        items = [(root, cfg['text_selector'], '正文')]
+        if cfg['comment_selector']:
+            if await root.locator(cfg['comment_selector']).count():
+                raise ValueError('帖子卡片包含评论列表，会造成重复截图；请重新校准帖子卡片范围。')
+            if not cfg['comment_text_selector']:
+                raise ValueError('设置了评论卡片选择器后，还需设置评论原文选择器。')
+            candidates = page.locator(cfg['comment_selector'])
+            if await candidates.count() > 200:
+                raise ValueError('评论选择器匹配过多，请缩小为单条评论卡片。')
+            for i in range(await candidates.count()):
+                card = candidates.nth(i)
+                if await card.is_visible() and await card.locator(cfg['artist_selector']).count():
+                    items.append((card, cfg['comment_text_selector'], f'艺人评论 {len(items)}'))
+            if len(items) > 30:
+                raise ValueError('艺人评论超过 29 条，请缩小评论抓取范围后分批处理。')
+        fragments, slots, offset = [], [], 0
+        for index, (card, text_selector, label) in enumerate(items):
+            text_node = card.locator(text_selector)
+            if await text_node.count() != 1:
+                raise ValueError(f'{label}原文选择器必须匹配且仅匹配一个完整文本块。')
+            await card.scroll_into_view_if_needed()
+            if cfg['expand_selector']:
+                buttons = card.locator(cfg['expand_selector'])
+                for j in range(min(await buttons.count(), 10)):
+                    if await buttons.nth(j).is_visible():
+                        await buttons.nth(j).click(timeout=3000)
+                        await page.wait_for_timeout(200)
+            if await text_node.evaluate('(el) => el.scrollHeight > el.clientHeight + 3'):
+                raise ValueError(f'{label}原文仍被折叠或截断，请展开全文或手动截图。')
+            # Load images inside the selected card before taking screenshot; failed loads are blockers.
+            await card.evaluate('''async el => {
+                for (const img of el.querySelectorAll('img')) {
+                    img.loading = 'eager';
+                    if (!img.complete) await Promise.race([
+                        new Promise(r => { img.addEventListener('load',r,{once:true}); img.addEventListener('error',r,{once:true}); }),
+                        new Promise(r => setTimeout(r,10000))
+                    ]);
+                    if (!img.complete || !img.naturalWidth) throw new Error('image incomplete');
+                }
+            }''')
+            await page.evaluate('document.fonts.ready')
+            text = (await text_node.inner_text()).strip()
+            author_node = card.locator(cfg['author_selector'])
+            if await author_node.count() != 1:
+                raise ValueError(f'{label}作者选择器必须匹配一个作者姓名或身份元素。')
+            author = (await author_node.get_attribute('data-member-id') or
+                      await author_node.get_attribute('data-author-id') or
+                      await author_node.inner_text()).strip()
+            if not author:
+                raise ValueError(f'{label}无法读取作者身份，停止历史匹配。请校准作者选择器。')
+            if not text:
+                raise ValueError(f'{label}没有可插入译文的正文，请手动截图指定位置。')
+            boxes = await card.evaluate('''(el, selector) => {
+                const a=el.getBoundingClientRect(), b=el.querySelector(selector).getBoundingClientRect();
+                return {w:a.width,h:a.height,y:b.bottom-a.top};
+            }''', text_selector)
+            if boxes['h'] > 30000 or boxes['w'] * boxes['h'] > 24_000_000:
+                raise ValueError('帖子太长，请分批截图。')
+            raw = await card.screenshot(type='png', animations='disabled', timeout=20000)
+            image = Image.open(io.BytesIO(raw)).convert('RGB')
+            if boxes['y'] < 0 or boxes['y'] > boxes['h']:
+                raise ValueError('原文位置不在卡片范围内，请重新校准。')
+            y = offset + round(boxes['y'] * image.height / boxes['h'])
+            fingerprint = hashlib.sha256(f'{url}\n{label == "正文"}\n{author}\n{text}'.encode()).hexdigest()
+            slots.append({'key': str(index), 'label': label, 'y': y, 'text': text,
+                          'fingerprint': fingerprint, 'author': author,
+                          'reusable': bool(store.memory(fingerprint, group))})
+            fragments.append(image)
+            offset += image.height + 16
+        width = max(f.width for f in fragments)
+        height = sum(f.height for f in fragments) + 16 * (len(fragments) - 1)
+        if width * height > 24_000_000 or height > 30000:
+            raise ValueError('长图过大，请分批抓取。')
+        combined = Image.new('RGB', (width, height), 'white')
+        y = 0
+        for im in fragments:
+            combined.paste(im, (0, y))
+            y += im.height + 16
+        name = f'originals/{uuid.uuid4().hex}.png'
+        combined.save(store.DATA / name)
+        note = '仅记录本次页面中已加载、匹配艺人标识的卡片；不保证未加载或折叠的评论完整。'
+        if not reached_end:
+            note += '已达到滚动上限，请检查是否还有未加载内容。'
+        self.login_state = '已成功读取艺人帖子；会话当前可用（不代表所有付费内容可访问）'
+        self.last_error = ''
+        return store.add_post(url, slots[0]['text'][:60],
+                              group, name, slots, 'weverse', note)
+
+    async def discover(self):
+        cfg = store.settings()
+        if not cfg['feed_link_selector'] or not cfg['artist_selector']:
+            raise ValueError('自动记录需要先配置动态列表中的艺人帖子链接选择器和艺人标识。')
+        async with self.lock:
+            page = await self.ready_page(weverse_url(cfg['feed_url'], feed=True))
+            try:
+                links = await page.locator(cfg['feed_link_selector']).evaluate_all(
+                    '(els) => els.slice(0,30).map(e=>e.href).filter(Boolean)')
+                urls = []
+                for link in links:
+                    try:
+                        url = weverse_url(link)
+                        if url not in urls:
+                            urls.append(url)
+                    except ValueError:
+                        continue
+                if not urls:
+                    raise ValueError('动态列表没有匹配到有效帖子链接；请检查登录和列表选择器。')
+                return urls
+            finally:
+                await page.close()
+
+
+browser = Browser()

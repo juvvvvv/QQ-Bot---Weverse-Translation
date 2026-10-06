@@ -1,0 +1,51 @@
+"""Single source of truth for exact command matching, permissions and help."""
+COMMANDS = {
+    'help': (1, 'help', '显示你能使用的指令'),
+    '截图': (2, '截图 帖子链接', '仅返回原截图'),
+    '烤制': (2, '烤制 帖子链接\n译文', '一次完成截图、插入译文、加水印并发图'),
+    '打开仓库': (2, '打开仓库', '查看本群待翻译与部分翻译档案'),
+    '查看': (2, '查看 档案编号', '只返回原始截图'),
+    '清空仓库': (2, '清空仓库', '永久删除本群全部档案、成图及历史译文'),
+    '设置水印': (1, '设置水印 [附上PNG图片]', '上传或替换本群水印 Logo'),
+    '查看水印': (1, '查看水印', '查看本群 Logo 及位置、大小和透明度'),
+    '调整水印': (1, '调整水印 底部/左上/右上/左下/右下 大小百分比 透明度百分比 [边距像素]', '调整本群 PNG Logo'),
+    '设置权限': (3, '设置权限 -l 1/2/3 @成员', '设置本群成员等级，也支持 --level'),
+    '取消权限': (3, '取消权限 -l 当前等级 @成员', '移除本群成员权限，也支持 --level'),
+}
+
+
+def command_name(text):
+    parts = text.split(maxsplit=1)
+    return parts[0] if parts and parts[0] in COMMANDS else None
+
+
+def help_text(level):
+    lines = [f'PLAVE 指令表 · 当前 level {level}', '不加 /、# 或 wv；每条消息只解析一次开头指令。']
+    for name, (minimum, example, description) in COMMANDS.items():
+        if level >= minimum:
+            lines.append(f'{example}\n  {description}')
+    lines.extend(['等级继承：1 水印；2 普通功能；3 权限管理。',
+                  '烤制的中文由你提供，不是机器翻译；正文后可用 [评论1] 分段。',
+                  '清空仓库不可恢复，并暂停本群自动记录；水印、权限和登录不删除。'])
+    return '\n'.join(lines)
+
+
+def translations_from_body(body):
+    import re
+    if not body.strip():
+        raise ValueError('请在链接后的下一行填写中文译文。')
+    result, lines, key = {}, [], '0'
+    for line in body.replace('\r\n', '\n').split('\n'):
+        marker = re.fullmatch(r'\[(正文|评论\s*([1-9][0-9]*))\]', line.strip())
+        if marker:
+            if lines:
+                result[key] = '\n'.join(lines).strip()
+            key = marker.group(2) or '0'
+            if key in result:
+                raise ValueError('同一段译文的标记重复，请合并后再发送。')
+            lines = []
+        else:
+            lines.append(line)
+    if lines:
+        result[key] = '\n'.join(lines).strip()
+    return {k: v for k, v in result.items() if v}
