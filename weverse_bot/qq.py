@@ -13,6 +13,7 @@ from .render import render_post
 
 from .commands import COMMANDS, command_name, help_text, translations_from_body
 from .locks import workflow_lock
+from .translations import render_body, split_body
 
 
 class QQClient:
@@ -220,10 +221,17 @@ class QQClient:
                 raise ValueError('你的权限已变更，无法执行此指令。')
             if command in ('截图', '烤制'):
                 first, separator, body = text.replace('\r\n', '\n').partition('\n')
-                header = first.split()
+                pipe = command == '烤制' and first.startswith('烤制|')
+                if pipe:
+                    match = re.fullmatch(r'烤制\|([^|]+)\|\s*', first)
+                    header = ['烤制', match[1].strip()] if match else []
+                else:
+                    header = first.split()
                 if len(header) != 2 or (command == '截图' and body.strip()):
                     raise ValueError('格式：截图 帖子链接；烤制 帖子链接，然后换行填写译文。')
-                translations = translations_from_body(body) if command == '烤制' else None
+                if pipe:
+                    split_body(body)  # Validate before doing network work.
+                translations = translations_from_body(body) if command == '烤制' and not pipe else None
                 await self.send(group, '开始读取帖子，请稍等。')
                 saved = await browser.capture(header[1], group)
                 if not store.authorized(group, user, minimum):
@@ -231,7 +239,7 @@ class QQClient:
                 if command == '截图':
                     await self.send(group, f"档案 {saved['id']} · 原始截图\n{saved['note']}", saved['original'])
                 else:
-                    result = await asyncio.to_thread(render_post, saved['id'], translations, True)
+                    result = await asyncio.to_thread(render_body, saved['id'], body) if pipe else await asyncio.to_thread(render_post, saved['id'], translations, True)
                     if not store.authorized(group, user, minimum):
                         raise ValueError('你的权限已取消，任务不再发图。')
                     await self.send(group, f"档案 {saved['id']} · {'全部完成' if result['status']=='translated' else '部分翻译，仍有未译评论'}", result['output'])

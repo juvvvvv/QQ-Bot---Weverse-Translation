@@ -38,7 +38,7 @@ class CaptureLayoutTests(unittest.IsolatedAsyncioTestCase):
 
     async def capture_html(self, html):
         await self.page.set_content(html)
-        return await self.browser.extract(self.page,'https://weverse.io/plave/artist/4-241905010','123456',self.cfg|{'comment_selector':''})
+        return await self.browser.extract(self.page,'https://weverse.io/plave/artist/4-241905010','123456',self.cfg|{'comment_selector':'','capture_artist_comments':False})
 
     async def test_bottom_spacing_adapts_to_text_length_without_fixed_height(self):
         store.save_watermark('', {'enabled':False})
@@ -91,20 +91,20 @@ class CaptureLayoutTests(unittest.IsolatedAsyncioTestCase):
         post=await self.capture_html(card_html(counters=counters))
         counts=post['slots'][0]['comment_counts']
         self.assertEqual(len(post['slots']),1)
-        self.assertEqual(counts['total'],{'display':'1.8K','value':1800,'approximate':True})
+        self.assertNotIn('total',counts)
         self.assertEqual(counts['artist']['value'],14)
-        self.assertIn('评论 1.8K',await self.page.locator('[data-wvbot-counts]').inner_text())
-        newer=await self.capture_html(card_html(counters=counters.replace('1.8K','2,004')))
-        self.assertEqual(newer['slots'][0]['comment_counts']['total']['value'],2004)
+        self.assertIn('艺人评论 14',await self.page.locator('[data-wvbot-counts]').inner_text())
+        newer=await self.capture_html(card_html(counters=counters.replace('>14<','>15<')))
+        self.assertEqual(newer['slots'][0]['comment_counts']['artist']['value'],15)
 
     async def test_missing_ambiguous_and_zero_counts_remain_distinct(self):
         unknown=await self.capture_html(card_html())
-        self.assertIsNone(unknown['slots'][0]['comment_counts']['total'])
-        zero=await self.capture_html(card_html(counters='<span class="comment-total-count-and-refresh-_-count">0</span>'))
-        self.assertEqual(zero['slots'][0]['comment_counts']['total']['value'],0)
-        ambiguous=await self.capture_html(card_html(counters='<span class="comment-total-count-and-refresh-_-count">1</span><span class="comment-total-count-and-refresh-_-count">2</span>'))
+        self.assertIsNone(unknown['slots'][0]['comment_counts']['artist'])
+        zero=await self.capture_html(card_html(counters='<span class="base-comment-artist-count-and-toggle-_-count">0</span>'))
+        self.assertEqual(zero['slots'][0]['comment_counts']['artist']['value'],0)
+        ambiguous=await self.capture_html(card_html(counters='<span class="base-comment-artist-count-and-toggle-_-count">1</span><span class="base-comment-artist-count-and-toggle-_-count">2</span>'))
         counts=ambiguous['slots'][0]['comment_counts']
-        self.assertIsNone(counts['total']);self.assertTrue(counts['warnings'])
+        self.assertIsNone(counts['artist']);self.assertTrue(counts['warnings'])
 
 
 class TextWatermarkTests(unittest.TestCase):
@@ -126,7 +126,7 @@ class TextWatermarkTests(unittest.TestCase):
             self.assertEqual(box,(x,y,x+20,y+10))
 
     def test_font_and_transparency_follow_explicit_units(self):
-        cfg=store.WATERMARK_DEFAULTS|{'font_size':0}
+        cfg=store.WATERMARK_DEFAULTS|{'font_size':0,'position':5}
         self.assertEqual(text_job(840,cfg,28,2)['size'],28)
         self.assertEqual(text_job(840,cfg|{'font_size':20},28,2)['size'],40)
         base=Image.new('RGB',(300,400),'white');mark=Image.new('RGBA',(20,10),'black')
@@ -149,11 +149,13 @@ class TextWatermarkTests(unittest.TestCase):
         translations={'0':'正文译文\n第二行','1':'评论译文'}
         plain=compose(base,slots,translations,'')
         marked=compose(base,slots,translations,store.WATERMARK_DEFAULTS|{'text':'ABC','position':9,'transparency':0})
-        box=ImageChops.difference(marked,plain).getbbox()
-        self.assertEqual(marked.size,plain.size)
-        self.assertEqual(box[2],plain.width-16)
-        self.assertEqual(box[3],plain.height-16)
-        self.assertGreater(box[1],300)
+        padded=Image.new('RGB',marked.size,'white');padded.paste(plain)
+        box=ImageChops.difference(marked,padded).getbbox()
+        self.assertEqual(marked.width,plain.width)
+        self.assertGreater(marked.height,plain.height)
+        self.assertEqual(box[2],plain.width-4)
+        self.assertEqual(box[3],marked.height-4)
+        self.assertGreaterEqual(box[1],plain.height)
 
     def test_legacy_logo_is_not_rendered_or_deleted_and_new_defaults_are_used(self):
         path=store.DATA/'logos'/'legacy.png';path.write_bytes(b'old-logo')

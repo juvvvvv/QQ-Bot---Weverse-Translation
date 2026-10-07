@@ -11,6 +11,7 @@ from . import store
 from .page_cleanup import (reject_optional_consent, remove_site_chrome,
                            ensure_author_visible, prepare_emoji_text)
 from .capture_layout import read_comment_counts, add_count_row, measure_card, screenshot_card
+from .artist_comments import collect_artist_comments, stage_comment, decoration, TEXT, AUTHOR
 
 
 def weverse_url(raw, feed=False):
@@ -62,8 +63,8 @@ class Browser:
             self.mode = None
 
     async def login(self):
-        if sys.platform != 'darwin' and not __import__('os').environ.get('DISPLAY'):
-            raise ValueError('当前机器没有桌面。请在你的 Mac 上启动本项目后点击登录，在弹出的浏览器中手动登录。')
+        if sys.platform not in ('darwin', 'win32') and not __import__('os').environ.get('DISPLAY'):
+            raise ValueError('当前机器没有桌面。请在你的 Windows / Mac 上点击登录，在弹出的浏览器中手动登录。')
         async with self.lock:
             context = await self.open(headed=True)
             page = context.pages[0] if context.pages else await context.new_page()
@@ -74,6 +75,36 @@ class Browser:
     async def ready_page(self, url):
         ctx = await self.open(headed=not store.settings()['headless'])
         page = await ctx.new_page()
+        page._wv_parents = {}
+        page._wv_response_tasks = set()
+        async def read_response(response):
+            try:
+                parsed = urlsplit(response.url)
+                if 'comment' not in parsed.path.lower() or not (
+                    parsed.hostname == 'global.apis.naver.com' or
+                    parsed.hostname == 'weverse.io' or (parsed.hostname or '').endswith('.weverse.io')):
+                    return
+                if int(response.headers.get('content-length', '0')) > 2_000_000:
+                    return
+                value = await response.json()
+                def visit(node):
+                    if isinstance(node, list):
+                        for item in node: visit(item)
+                    elif isinstance(node, dict):
+                        cid = node.get('commentId') or node.get('comment_id') or node.get('id')
+                        parent = node.get('parentCommentId') or node.get('parent_comment_id') or node.get('rootCommentId')
+                        if cid and parent:
+                            page._wv_parents[str(cid)] = str(parent)
+                        for item in node.values():
+                            if isinstance(item, (dict, list)): visit(item)
+                visit(value)
+            except Exception:
+                pass  # DOM fallback never invents a parent when data is absent.
+        def response_received(response):
+            task = asyncio.create_task(read_response(response))
+            page._wv_response_tasks.add(task)
+            task.add_done_callback(page._wv_response_tasks.discard)
+        page.on('response', response_received)
         await page.set_viewport_size({'width': store.settings()['capture_width'], 'height': 1000})
         try:
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
@@ -142,8 +173,18 @@ class Browser:
             if new == old:
                 reached_end = True
                 break
-        items = [(root, cfg['text_selector'], '正文')]
-        if cfg['comment_selector']:
+        items = [(root, cfg['text_selector'], '正文', cfg['author_selector'], {})]
+        native = []
+        if cfg.get('capture_artist_comments', True):
+            native = await collect_artist_comments(page, cfg, getattr(page, '_wv_parents', {}))
+            tasks = list(getattr(page, '_wv_response_tasks', set()))
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                native = await collect_artist_comments(page, cfg, getattr(page, '_wv_parents', {}))
+        if native:
+            for record in native:
+                items.append((record['card'], TEXT, f"艺人评论 {len(items)}", AUTHOR, record))
+        elif cfg['comment_selector'] and cfg.get('capture_artist_comments', True):
             if await root.locator(cfg['comment_selector']).count():
                 raise ValueError('帖子卡片包含评论列表，会造成重复截图；请重新校准帖子卡片范围。')
             if not cfg['comment_text_selector']:
@@ -154,13 +195,22 @@ class Browser:
             for i in range(await candidates.count()):
                 card = candidates.nth(i)
                 if await card.is_visible() and await card.locator(cfg['artist_selector']).count():
-                    items.append((card, cfg['comment_text_selector'], f'艺人评论 {len(items)}'))
-            if len(items) > 30:
-                raise ValueError('艺人评论超过 29 条，请缩小评论抓取范围后分批处理。')
+                    items.append((card, cfg['comment_text_selector'], f'艺人评论 {len(items)}', cfg['author_selector'], {}))
+            if len(items) > 201:
+                raise ValueError('艺人评论超过 200 条，请分批处理。')
         counts = await read_comment_counts(page, cfg)
+        if cfg.get('capture_artist_comments', True) and counts['artist'] and not counts['artist']['approximate']:
+            expected = counts['artist']['value']
+            if expected != len(items) - 1:
+                raise ValueError(f'网页显示 {expected} 条艺人评论，本次仅读取 {len(items)-1} 条。已停止，避免译文错配；请检查展开状态或评论列表加载。')
         fragments, slots, offset = [], [], 0
-        gap = round(16 * await page.evaluate('devicePixelRatio'))
-        for index, (card, text_selector, label) in enumerate(items):
+        gap = 0 if native else round(16 * await page.evaluate('devicePixelRatio'))
+        css_width = await root.evaluate('el=>el.getBoundingClientRect().width')
+        for index, (card, text_selector, label, author_selector, metadata) in enumerate(items):
+            if metadata:
+                await card.scroll_into_view_if_needed()
+                card = await stage_comment(page, metadata, css_width,
+                                           f'艺人评论 · {len(native)}' if index == 1 else '')
             text_node = card.locator(text_selector)
             if await text_node.count() != 1:
                 raise ValueError(f'{label}原文选择器必须匹配且仅匹配一个完整文本块。')
@@ -173,7 +223,7 @@ class Browser:
                         await page.wait_for_timeout(200)
             if await text_node.evaluate('(el) => el.scrollHeight > el.clientHeight + 3'):
                 raise ValueError(f'{label}原文仍被折叠或截断，请展开全文或手动截图。')
-            await prepare_emoji_text(text_node)
+            emojis = await prepare_emoji_text(text_node)
             # Load images inside the selected card before taking screenshot; failed loads are blockers.
             await card.evaluate('''async el => {
                 for (const img of el.querySelectorAll('img')) {
@@ -189,12 +239,13 @@ class Browser:
             if await text_node.evaluate('(el) => el.scrollHeight > el.clientHeight + 3'):
                 raise ValueError(f'{label}正文区域无法完整显示表情，请检查正文高度或手动截图。')
             text = (await text_node.inner_text()).strip()
-            author_node = card.locator(cfg['author_selector'])
+            author_node = card.locator(author_selector)
             if await author_node.count() != 1:
                 raise ValueError(f'{label}作者选择器必须匹配一个作者姓名或身份元素。')
             await ensure_author_visible(card, author_node)
             author = (await author_node.get_attribute('data-member-id') or
                       await author_node.get_attribute('data-author-id') or
+                      await author_node.evaluate('el=>Array.from(el.childNodes).filter(n=>n.nodeType===3).map(n=>n.textContent).join("")') or
                       await author_node.inner_text()).strip()
             if not author:
                 raise ValueError(f'{label}无法读取作者身份，停止历史匹配。请校准作者选择器。')
@@ -203,7 +254,7 @@ class Browser:
             # Consent can also appear late, after media/fonts finish loading.
             # Dismiss it before measuring the final screenshot/translation coordinates.
             await reject_optional_consent(page)
-            if index == 0:
+            if index == 0 and not native:
                 await add_count_row(card, counts)
             # Page screenshot clips start at the current viewport origin. Keep
             # that origin at document (0, 0) before measuring document coordinates,
@@ -211,6 +262,10 @@ class Browser:
             await page.evaluate('window.scrollTo(0,0)')
             boxes = await measure_card(card, text_selector)
             raw = await screenshot_card(page, boxes)
+            # An asynchronously arriving CMP must be rejected before accepting
+            # pixels; recapture after it closes instead of saving a covered image.
+            if await reject_optional_consent(page):
+                raw = await screenshot_card(page, boxes)
             image = Image.open(io.BytesIO(raw)).convert('RGB')
             scale = image.width / boxes['w']
             wanted_height = round(boxes['target_height'] * scale)
@@ -221,8 +276,17 @@ class Browser:
             if boxes['y'] < 0 or boxes['y'] > boxes['h']:
                 raise ValueError('原文位置不在卡片范围内，请重新校准。')
             y = offset + round(boxes['y'] * scale)
-            fingerprint = hashlib.sha256(f'{url}\n{label == "正文"}\n{author}\n{text}'.encode()).hexdigest()
+            comment_id = metadata.get('comment_id', '')
+            fingerprint = hashlib.sha256(f'{url}\n{label == "正文"}\n{comment_id}\n{author}\n{text}'.encode()).hexdigest()
+            decor = await decoration(card) if metadata else {}
+            if decor.get('frame'):
+                decor['frame'] = {**decor['frame'], 'left': round(decor['frame']['left'] * scale),
+                                  'right': round(decor['frame']['right'] * scale)}
+            if decor.get('connector_x') is not None:
+                decor['connector_x'] = round(decor['connector_x'] * scale)
             slots.append({'key': str(index), 'label': label, 'y': y, 'text': text,
+                          'emojis': emojis, 'comment_id': comment_id,
+                          **{k: v for k, v in metadata.items() if k != 'card'}, **decor,
                           'x': round(boxes['x'] * scale), 'width': round(boxes['text_width'] * scale),
                           'font_size': boxes['font_size'] * scale,
                           'scale': scale, 'bottom_padding': round(boxes['padding'] * scale),
@@ -244,6 +308,9 @@ class Browser:
         name = f'originals/{uuid.uuid4().hex}.png'
         combined.save(store.DATA / name)
         note = '仅记录本次页面中已加载、匹配艺人标识的卡片；不保证未加载或折叠的评论完整。'
+        unknown = sum(not r.get('grouping_known', True) for r in native)
+        if unknown:
+            note += f' {unknown} 条楼中楼未提供父评论编号，已保留缩进和时间顺序，未猜测归属。'
         if not reached_end:
             note += '已达到滚动上限，请检查是否还有未加载内容。'
         self.login_state = '已成功读取当前艺人动态（不代表已登录或可读取需账号权限的内容）'

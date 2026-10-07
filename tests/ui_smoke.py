@@ -11,9 +11,8 @@ async def main():
   await page.locator('#stats .stat').first.wait_for()
   await page.screenshot(path=str(ARTIFACT_DIR / '工作台-初始界面.png'),full_page=True)
   await page.locator('#demo').click()
-  await page.locator('[data-translation-key="0"]').wait_for()
-  await page.locator('[data-translation-key="0"]').fill('今天也谢谢大家的陪伴。\n希望你们度过幸福的一天。')
-  await page.locator('[data-translation-key="1"]').fill('明天再见！')
+  await page.locator('#translation-body').wait_for()
+  await page.locator('#translation-body').fill('今天也谢谢大家的陪伴。\n希望你们度过幸福的一天。\n+\n明天再见！')
   await page.locator('#translation-form button[type=submit]').click()
   await expect(page.locator('#editor .badge')).to_have_text('已完成')
   await page.locator('#preview-footer a[download]').wait_for()
@@ -80,9 +79,9 @@ async def main():
   await page.locator('#upload-form [name="group_id"]').select_option('123456')
   await page.locator('#upload-form button[type=submit]').click()
   await expect(page.locator('#editor .editor-title')).to_have_text('手动选点界面测试')
-  await page.locator('[data-translation-key="0"]').fill('只翻译正文，评论暂留空。')
+  await page.locator('#translation-body').fill('手动正文译文\n+\n手动评论译文')
   await page.locator('#translation-form button[type=submit]').click()
-  await expect(page.locator('#editor .badge')).to_have_text('部分翻译')
+  await expect(page.locator('#editor .badge')).to_have_text('已完成')
   await page.reload()
   await page.locator('#stats .stat').first.wait_for()
   await page.locator('[data-tab="archive"]').click()
@@ -106,7 +105,7 @@ async def main():
   assert await page.locator('h1').count()==1
   assert await page.locator('section').count()==13
   assert not errors, errors
-  print(json.dumps({'status':'passed','flows':['演示截图→两段译文→完成→PNG下载','查看原图','保存设置','level3授权→取消','上传→原图点选两个位置→部分翻译','刷新后档案保留','390px窄屏无横向溢出','HTML说明书13节','文字水印→描边→位置9→预览→保存，无PNG入口','按群永久清空且保留其他仓库'],'console_errors':errors},ensure_ascii=False))
+  print(json.dumps({'status':'passed','flows':['演示截图→两段译文→完成→PNG下载','查看原图','保存设置','level3授权→取消','上传→原图点选两个位置→一次输入完整译文','刷新后档案保留','390px窄屏无横向溢出','HTML说明书13节','文字水印→描边→位置9→预览→保存，无PNG入口','按群永久清空且保留其他仓库'],'console_errors':errors},ensure_ascii=False))
   await browser.close()
 
 if __name__=='__main__':

@@ -76,7 +76,7 @@ async def reject_optional_consent(page, wait_ms=0):
                 for _ in range(20):
                     if not await _consent_visible(page):
                         await page.wait_for_timeout(150)
-                        return
+                        return True
                     await page.wait_for_timeout(100)
                 raise ValueError('拒绝同意后弹窗仍未关闭，已停止截图，请检查工作台浏览器。')
         if time.monotonic() >= deadline:
@@ -85,7 +85,7 @@ async def reject_optional_consent(page, wait_ms=0):
                     '检测到隐私同意弹窗，但未找到明确的拒绝按钮，已停止截图。'
                     '请提供该弹窗拒绝按钮的 outerHTML，或先在工作台浏览器中手动选择。'
                 )
-            return
+            return False
         await page.wait_for_timeout(150)
 
 

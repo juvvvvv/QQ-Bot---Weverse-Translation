@@ -22,6 +22,7 @@ SESSION = secrets.token_urlsafe(32)
 CSRF = secrets.token_urlsafe(32)
 from .locks import workflow_lock as operation_lock
 from .render import compose
+from .translations import render_body, latest_context
 from .commands import COMMANDS, help_text
 monitor_state = {'state': '未启用', 'last_run': None, 'last_error': ''}
 monitor_wakeup = asyncio.Event()
@@ -32,6 +33,10 @@ def serialize(post):
     post['original_url'] = '/media/' + post['original']
     post['output_url'] = '/media/' + post['output'] if post['output'] else None
     post['comment_counts'] = post['slots'][0].get('comment_counts') if post['slots'] else None
+    latest, saved, changed = latest_context(post)
+    post['has_saved_version'] = bool(latest)
+    post['saved_translations'] = saved
+    post['changed_slots'] = changed
     for slot in post['slots']:
         slot['reusable'] = bool(slot.get('fingerprint') and store.memory(slot['fingerprint'], post['group_id']))
     return post
@@ -182,7 +187,7 @@ async def update_settings(body: SettingsUpdate):
     cfg = store.settings() | value
     for name in ('owner_qq', 'ws_url', 'ws_token', 'font_path', 'post_selector', 'text_selector',
                  'comment_selector', 'comment_text_selector', 'artist_selector', 'author_selector', 'expand_selector',
-                 'comment_count_selector', 'artist_comment_count_selector', 'feed_url', 'feed_link_selector'):
+                 'artist_comment_count_selector', 'feed_url', 'feed_link_selector'):
         if not isinstance(cfg[name], str) or len(cfg[name]) > 2000:
             raise ValueError(f'{name} 字段格式不正确或过长。')
     if cfg['owner_qq'] and not re.fullmatch(r'[1-9][0-9]{4,19}', cfg['owner_qq']):
@@ -202,7 +207,7 @@ async def update_settings(body: SettingsUpdate):
             raise ValueError(f'{key} 需要在 {low}–{high} 范围内。')
     if type(cfg['capture_scale']) is not int or cfg['capture_scale'] not in (1, 2, 3):
         raise ValueError('截图像素倍率支持 1、2、3。')
-    if type(cfg['headless']) is not bool or type(cfg['monitor_enabled']) is not bool:
+    if any(type(cfg[k]) is not bool for k in ('headless', 'monitor_enabled', 'capture_artist_comments')):
         raise ValueError('开关需为布尔值。')
     if cfg['monitor_enabled'] and not all(cfg[k] for k in ('post_selector', 'text_selector', 'artist_selector', 'author_selector', 'feed_link_selector')):
         raise ValueError('自动记录需要先完成帖子、原文、艺人标识、作者及列表链接选择器校准。')
@@ -279,13 +284,18 @@ async def upload(file: UploadFile = File(...), title: str = Form('手动截图')
 
 
 class TranslationRequest(BaseModel):
-    translations: dict[str, str]
+    translations: dict[str, str] | None = None
+    body: str | None = Field(default=None, max_length=50000)
     reuse: bool = False
 
 
 @app.post('/api/posts/{post_id}/render')
 async def render(post_id: str, body: TranslationRequest):
     async with operation_lock:
+        if body.body is not None:
+            return serialize(await asyncio.to_thread(render_body, post_id, body.body))
+        if body.translations is None:
+            raise ValueError('请填写完整译文。')
         return serialize(await asyncio.to_thread(render_post, post_id, body.translations, body.reuse))
 
 

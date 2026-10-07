@@ -13,7 +13,7 @@ def text_job(width, cfg, body_size, scale):
             'outline_width': cfg['outline_width'] * scale if cfg['outline'] else 0}
 
 
-def apply_text(image, mark, cfg, scale=1):
+def apply_text(image, mark, cfg, scale=1, bottom_padding=None):
     if mark is None:
         return image
     bbox = mark.getchannel('A').getbbox()
@@ -29,6 +29,16 @@ def apply_text(image, mark, cfg, scale=1):
     row = (cfg['position'] - 1) // 3
     x = [margin, (image.width - mark.width) // 2, image.width - margin - mark.width][column]
     y = [margin, (image.height - mark.height) // 2, image.height - margin - mark.height][row]
+    if row == 2 and bottom_padding is not None:
+        edge = max(2, round(4 * scale))
+        footer = max(int(bottom_padding), mark.height + edge * 2)
+        if footer > bottom_padding:
+            from PIL import Image
+            extended = Image.new('RGB', (image.width, image.height + footer - int(bottom_padding)), 'white')
+            extended.paste(image)
+            image = extended
+        x = [edge, (image.width-mark.width)//2, image.width-edge-mark.width][column]
+        y = image.height-footer+(footer-mark.height)//2
     result = image.convert('RGBA')
     result.alpha_composite(mark, (x, y))
     return result.convert('RGB')

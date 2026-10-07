@@ -1,0 +1,6 @@
+downloads/Weverse-QQ-Bot-Windows.zip: 941711 bytes, SHA256 75340522009e2e4f6366e76af9745c6168312e507de79b9e179820238eeeb831
+downloads/Weverse-QQ-Bot-Mac.zip: 938956 bytes, SHA256 6c4fdf6c60a249ec59b1899a6bb90efcf5c31cdc0a18efff4b486256561abd94
+OK: 59 shared files identical; CRC, Python syntax, launch files and permissions checked.
+
+Windows: 解压后的公共程序启动和 HTML/JS 访问通过（Linux，非系统安装测试）
+Mac: 解压后的公共程序启动和 HTML/JS 访问通过（Linux，非系统安装测试）

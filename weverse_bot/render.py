@@ -1,6 +1,6 @@
 """Insert white translation rows; preserve source pixels before optional watermarks."""
 import io
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps, ImageDraw, UnidentifiedImageError
 from . import store
 from .text_image import render_text_images
 from .watermark import text_job, apply_text
@@ -39,8 +39,8 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
     else:
         with Image.open(original) as image:
             source = image.convert('RGB')
-    if len(translations) > 30 or sum(len(t) for t in translations.values()) > 20000:
-        raise ValueError('单张图片最多 30 段翻译，合计最多 20000 字。')
+    if len(translations) > 201 or sum(len(t) for t in translations.values()) > 50000:
+        raise ValueError('单张图片最多 201 段翻译，合计最多 50000 字。')
     if set(translations) - {str(s['key']) for s in slots}:
         raise ValueError('翻译位置不存在。')
     positions, jobs = [], []
@@ -62,7 +62,7 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
     body_size = jobs[0]['size'] if jobs else (
         max(12 * scale, min(48 * scale, float(slots[0].get('font_size', size * scale))))
         if slots else size * scale)
-    cfg = store.WATERMARK_DEFAULTS | (watermark if isinstance(watermark, dict) else {'text': watermark})
+    cfg = store.WATERMARK_DEFAULTS | (watermark if isinstance(watermark, dict) else {'text': watermark, 'position': 5})
     mark_job = text_job(source.width, cfg, body_size, scale)
     if mark_job:
         jobs.append(mark_job)
@@ -74,6 +74,16 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
             ink = ImageOps.invert(images[index]).getbbox()
             if ink:
                 images[index] = images[index].crop((0, 0, images[index].width, ink[3]))
+        # Extend frame sides and reply connectors through the inserted row.
+        draw = ImageDraw.Draw(images[index])
+        stroke = max(1, round(float(slot.get('scale', 1))))
+        frame = slot.get('frame')
+        if frame:
+            for x in (frame['left'], frame['right']):
+                draw.line((x, 0, x, images[index].height), fill=frame['color'], width=stroke)
+        if slot.get('connector_x') is not None:
+            x = slot['connector_x']
+            draw.line((x, 0, x, images[index].height), fill='#e5e9f2', width=stroke)
     insertions = list(zip(positions, images))
     insertions.sort(key=lambda x: x[0])
     height = source.height + sum(b.height for _, b in insertions)
@@ -89,10 +99,14 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
         target += segment.height
         cursor = y
     result.paste(source.crop((0, cursor, source.width, source.height)), (0, target))
-    return apply_text(result, mark, cfg, scale)
+    result = apply_text(result, mark, cfg, scale,
+                        bottom_padding=slots[-1].get('bottom_padding', 0) if slots else 0)
+    if result.height > 40000 or result.width * result.height > 48_000_000:
+        raise ValueError('包含水印的图片过大，请降低像素倍率。')
+    return result
 
 
-def _render_post(post_id, translations, reuse=False, merge=False):
+def _render_post(post_id, translations, reuse=False, merge=False, publish=False):
     post = store.get_post(post_id)
     if post['status'] == 'ignored':
         raise ValueError('此档案已忽略，请先恢复待翻译状态。')
@@ -117,8 +131,15 @@ def _render_post(post_id, translations, reuse=False, merge=False):
     result.save(store.DATA / name)
     keys = {str(s['key']) for s in post['slots']}
     complete = keys <= selected.keys()
-    updated = store.update_post(post_id, translations=selected, output=name,
-                                status='translated' if complete else 'partial')
+    if publish:
+        try:
+            updated = store.publish_latest(post_id, selected, name, 'translated' if complete else 'partial')
+        except Exception:
+            (store.DATA / name).unlink(missing_ok=True)
+            raise
+    else:
+        updated = store.update_post(post_id, translations=selected, output=name,
+                                    status='translated' if complete else 'partial')
     for s in post['slots']:
         if s.get('fingerprint') and selected.get(str(s['key'])):
             store.remember(s['fingerprint'], selected[str(s['key'])], post['group_id'])
@@ -131,6 +152,6 @@ import threading
 render_lock = threading.RLock()
 
 
-def render_post(post_id, translations, reuse=False, merge=False):
+def render_post(post_id, translations, reuse=False, merge=False, publish=False):
     with render_lock:
-        return _render_post(post_id, translations, reuse, merge)
+        return _render_post(post_id, translations, reuse, merge, publish)

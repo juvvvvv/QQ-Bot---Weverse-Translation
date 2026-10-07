@@ -23,8 +23,8 @@ DEFAULTS = {
     'post_selector': '', 'text_selector': '', 'comment_selector': '',
     'comment_text_selector': '', 'artist_selector': '', 'author_selector': '',
     'expand_selector': '', 'feed_url': 'https://weverse.io/plave/artist',
-    'comment_count_selector': '.comment-total-count-and-refresh-_-count',
     'artist_comment_count_selector': '.base-comment-artist-count-and-toggle-_-count',
+    'capture_artist_comments': True,
     'feed_link_selector': '', 'monitor_enabled': False, 'poll_seconds': 300,
     'max_scrolls': 8, 'monitor_paused_groups': [],
 }
@@ -57,6 +57,9 @@ def init():
         CREATE TABLE IF NOT EXISTS garbage (path TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS latest_versions (
+            group_id TEXT, url TEXT, post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
+            PRIMARY KEY(group_id,url));
         ''')
         if 'level' not in {r['name'] for r in c.execute('PRAGMA table_info(members)')}:
             c.execute('ALTER TABLE members ADD COLUMN level INTEGER NOT NULL DEFAULT 2')
@@ -75,7 +78,9 @@ def init():
 def settings():
     with db() as c:
         row = c.execute('SELECT value FROM settings WHERE id=1').fetchone()
-    return DEFAULTS | json.loads(row['value'])
+    value = DEFAULTS | json.loads(row['value'])
+    value.pop('comment_count_selector', None)
+    return value
 
 
 def save_settings(changes):
@@ -221,7 +226,50 @@ def latest_by_url(url, group):
     return unpack(row) if row else None
 
 
-WATERMARK_DEFAULTS = {'text': '@PLAVE_PixelDiary', 'enabled': True, 'position': 5,
+def latest_rendered(url, group):
+    with db() as c:
+        row = c.execute('''SELECT p.* FROM latest_versions v JOIN posts p ON p.id=v.post_id
+                           WHERE v.url=? AND v.group_id=? AND p.group_id=v.group_id AND p.url=v.url''', (url, str(group))).fetchone()
+        if row is None:
+            # Import existing successful v2 images lazily without touching them
+            # until the first successful new bake is published.
+            row = c.execute('''SELECT * FROM posts WHERE url=? AND group_id=? AND output IS NOT NULL
+                               ORDER BY updated DESC,created DESC LIMIT 1''', (url, str(group))).fetchone()
+    return unpack(row) if row else None
+
+
+def publish_latest(post_id, translations, output, status):
+    """Swap only after PNG is saved. Retire older versions within this group/URL."""
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        post = unpack(c.execute('SELECT * FROM posts WHERE id=?', (post_id,)).fetchone())
+        old_ids = [post_id]
+        if post['url']:
+            old_ids += [r['id'] for r in c.execute('SELECT id FROM posts WHERE group_id=? AND url=? AND id!=?',
+                                                  (post['group_id'], post['url'], post_id))]
+        candidates = set()
+        for old_id in old_ids:
+            candidates.update(r['path'] for r in c.execute('SELECT path FROM post_files WHERE post_id=?', (old_id,)))
+        c.execute('UPDATE posts SET translations=?,output=?,status=?,updated=? WHERE id=?',
+                  (json.dumps(translations, ensure_ascii=False), output, status, time.time(), post_id))
+        c.execute('DELETE FROM post_files WHERE post_id=?', (post_id,))
+        for path in (post['original'], output):
+            c.execute('INSERT OR IGNORE INTO post_files VALUES (?,?)', (post_id, path))
+        for old_id in old_ids[1:]:
+            c.execute('DELETE FROM posts WHERE id=?', (old_id,))
+        if post['url']:
+            c.execute('INSERT OR REPLACE INTO latest_versions VALUES (?,?,?)', (post['group_id'], post['url'], post_id))
+        retained = {r['path'] for r in c.execute('SELECT path FROM post_files')}
+        for path in candidates - retained:
+            c.execute('INSERT OR IGNORE INTO garbage VALUES (?)', (path,))
+    try:
+        cleanup_garbage()
+    except OSError:
+        event('最新烤制已保存；旧图片清理待重试，请检查文件权限。', 'warning')
+    return get_post(post_id)
+
+
+WATERMARK_DEFAULTS = {'text': '@PLAVE_PixelDiary', 'enabled': True, 'position': 8,
                       'font_size': 0, 'color': '#000000', 'outline': False,
                       'outline_color': '#ffffff', 'outline_width': 1, 'transparency': 80}
 

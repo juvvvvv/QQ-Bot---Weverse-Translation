@@ -20,18 +20,20 @@ def parse_count(text):
 
 
 async def read_comment_counts(page, cfg):
-    result = {'total': None, 'artist': None, 'captured_at': time.time(), 'warnings': []}
-    for key, field in (('total', 'comment_count_selector'), ('artist', 'artist_comment_count_selector')):
+    result = {'artist': None, 'captured_at': time.time(), 'warnings': []}
+    for key, field in (('artist', 'artist_comment_count_selector'),):
         selector = cfg.get(field, '')
         if not selector:
             continue
         try:
             nodes = page.locator(selector)
-            visible = [nodes.nth(i) for i in range(min(await nodes.count(), 10))
-                       if await nodes.nth(i).is_visible()]
-            if len(visible) == 1:
-                result[key] = parse_count(await visible[0].inner_text())
-            if len(visible) > 1 or (len(visible) == 1 and result[key] is None):
+            all_nodes = [nodes.nth(i) for i in range(min(await nodes.count(), 20))]
+            visible = [node for node in all_nodes if await node.is_visible()]
+            values = [parse_count(await node.text_content() or '') for node in (visible or all_nodes)]
+            unique = {v['display']: v for v in values if v is not None}
+            if len(unique) == 1:
+                result[key] = next(iter(unique.values()))
+            if len(unique) > 1 or (all_nodes and result[key] is None):
                 result['warnings'].append(f'{field} 无法唯一读取计数，请校准计数元素。')
         except Exception:
             result['warnings'].append(f'{field} 无法读取，请检查选择器。')
@@ -40,7 +42,7 @@ async def read_comment_counts(page, cfg):
 
 async def add_count_row(card, counts):
     parts = []
-    for key, label in (('total', '评论'), ('artist', '艺人评论')):
+    for key, label in (('artist', '艺人评论'),):
         if counts[key] is not None:
             parts.append(f"{label} {counts[key]['display']}")
     if parts:
@@ -74,7 +76,7 @@ async def measure_card(card, text_selector):
             const range=document.createRange(); range.selectNodeContents(node);
             for(const r of range.getClientRects()) add(r);
         }
-        for(const n of el.querySelectorAll('img,video,canvas,svg,[role="img"],.WidgetMedia,[data-wvbot-counts]')) {
+        for(const n of el.querySelectorAll('img,video,canvas,svg,[role="img"],.WidgetMedia,[data-wvbot-counts],[data-wvbot-frame]')) {
             if(visible(n)) add(n.getBoundingClientRect());
         }
         const first=rects.length ? Math.min(...rects.map(r=>r.top)) : b.top;
@@ -95,6 +97,7 @@ async def screenshot_card(page, bounds):
     if bounds['target_height'] * bounds['w'] * bounds['scale'] ** 2 > 24_000_000 or bounds['target_height'] * bounds['scale'] > 30000:
         raise ValueError('高清截图过大，请降低截图像素倍率或分批读取评论。')
     raw = await page.screenshot(
+        full_page=True,
         type='png', clip={'x': bounds['left'], 'y': bounds['top'], 'width': bounds['w'], 'height': height},
         scale='device', animations='disabled', timeout=20000,
     )

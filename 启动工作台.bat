@@ -16,10 +16,6 @@ if errorlevel 1 goto changed_dependencies
 "%VENV_PYTHON%" -c "import fastapi, uvicorn, PIL, websockets, playwright, httpx, python_multipart"
 if errorlevel 1 goto missing_dependencies
 
-rem The old version checks DISPLAY to detect a desktop outside macOS.
-rem This process-local flag lets that check accept Windows; Chromium uses Windows normally.
-if not defined DISPLAY set "DISPLAY=windows"
-
 rem Supply a Windows Chinese font without changing source code or saved settings.
 if not defined WEVERSE_FONT if exist "%WINDIR%\Fonts\msyh.ttc" set "WEVERSE_FONT=%WINDIR%\Fonts\msyh.ttc"
 if not defined WEVERSE_FONT if exist "%WINDIR%\Fonts\simhei.ttf" set "WEVERSE_FONT=%WINDIR%\Fonts\simhei.ttf"
@@ -48,8 +44,8 @@ goto failed
 
 :needs_setup
 echo 当前项目目录尚未完成安装，请先双击“首次安装.bat”。
-echo 如果这是新下载的更新包，可回到原来能启动的项目，只替换 weverse_bot 文件夹。
-echo 保留原项目的 .venv 和 data，不用为本次 emoji 更新重新安装。
+echo 如果这是新下载的更新包，可回到原来能启动的项目，同时替换 weverse_bot 和 static 文件夹。
+echo 保留原项目的 .venv 和 data，本次更新依赖未变，无需重新安装。
 goto failed
 
 :broken_venv
