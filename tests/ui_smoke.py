@@ -45,17 +45,24 @@ async def main():
   await expect(page.locator('#member-count')).to_have_text('0 人 / 群组合')
   await page.locator('[data-tab="settings"]').click()
   await page.locator('#watermark-group').select_option('123456')
-  await expect(page.locator('#logo-preview')).to_contain_text('尚未上传')
-  import io
-  from PIL import Image
-  logo=io.BytesIO();Image.new('RGBA',(80,40),(180,40,80,150)).save(logo,format='PNG')
-  await page.locator('#logo-file').set_input_files({'name':'test-logo.png','mimeType':'image/png','buffer':logo.getvalue()})
-  await page.locator('#upload-logo').click()
-  await page.locator('#logo-preview img').wait_for()
+  await expect(page.locator('#wm-text')).to_have_value('@PLAVE_PixelDiary')
+  assert await page.locator('#logo-file').count()==0
+  await page.locator('#wm-text').fill('@PLAVE_PixelDiary 翻译：测试')
+  await page.locator('#wm-outline').check()
+  await page.locator('#wm-outline-color').fill('#ffffff')
+  await page.locator('#wm-outline-width').fill('2')
+  await page.locator('[data-watermark-position="9"]').click()
+  await page.locator('#wm-transparency').fill('55')
+  await page.locator('#preview-watermark').click()
+  await page.locator('#watermark-preview img').wait_for()
   await expect(page.locator('#busy')).to_be_hidden()
-  await page.locator('#logo-opacity').fill('55')
-  await page.locator('#save-logo').click()
+  assert await page.locator('#watermark-preview img').evaluate('el=>el.getBoundingClientRect().height<=420'), '水印预览应显示完整图片'
+  await expect(page.locator('#toast')).to_be_hidden()
+  await page.locator('.watermark-card').screenshot(path=str(ARTIFACT_DIR / '文字水印预览.png'))
+  await page.locator('#save-watermark').click()
   await expect(page.locator('#busy')).to_be_hidden()
+  await expect(page.locator('[data-watermark-position="9"]')).to_have_attribute('aria-pressed','true')
+  await page.screenshot(path=str(ARTIFACT_DIR / '文字水印控制面板.png'),full_page=True)
   await expect(page.locator('#commands-help')).to_contain_text('烤制 帖子链接')
   await page.locator('[data-tab="work"]').click()
   await page.locator('[data-source="upload"]').click()
@@ -99,7 +106,7 @@ async def main():
   assert await page.locator('h1').count()==1
   assert await page.locator('section').count()==13
   assert not errors, errors
-  print(json.dumps({'status':'passed','flows':['演示截图→两段译文→完成→PNG下载','查看原图','保存设置','level3授权→取消','上传→原图点选两个位置→部分翻译','刷新后档案保留','390px窄屏无横向溢出','HTML说明书13节','PNG上传与调整','按群永久清空且保留其他仓库'],'console_errors':errors},ensure_ascii=False))
+  print(json.dumps({'status':'passed','flows':['演示截图→两段译文→完成→PNG下载','查看原图','保存设置','level3授权→取消','上传→原图点选两个位置→部分翻译','刷新后档案保留','390px窄屏无横向溢出','HTML说明书13节','文字水印→描边→位置9→预览→保存，无PNG入口','按群永久清空且保留其他仓库'],'console_errors':errors},ensure_ascii=False))
   await browser.close()
 
 if __name__=='__main__':

@@ -319,18 +319,18 @@ class QQTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(.1)
         self.assertEqual(len(self.sent()),1)
 
-    async def test_level1_png_upload_and_adjustment(self):
+    async def test_level1_text_watermark_and_adjustment(self):
         store.set_level('123456','222222',1)
-        im=Image.new('RGBA',(64,32),(200,0,0,128));buf=io.BytesIO();im.save(buf,format='PNG')
-        extra=[{'type':'image','data':{'file':'base64://'+base64.b64encode(buf.getvalue()).decode()}}]
-        await self.message('设置水印',user='222222',mid=40,extra=extra)
+        await self.message('设置水印 @PLAVE_PixelDiary',user='222222',mid=40)
         await self.wait_for(lambda:len(self.sent())==1)
-        self.assertTrue((store.DATA/store.watermark('123456')['logo']).is_file())
-        self.assertIsNone(store.watermark('234567')['logo'])
-        await self.message('调整水印 右下 20 60 10',user='222222',mid=41)
+        self.assertEqual(store.watermark('123456')['text'],'@PLAVE_PixelDiary')
+        await self.message('调整水印 9 20 60',user='222222',mid=41)
         await self.wait_for(lambda:len(self.sent())==2)
-        self.assertEqual(store.watermark('123456')['position'],'bottom-right')
-        self.assertEqual(store.watermark('123456')['opacity'],60)
+        self.assertEqual(store.watermark('123456')['position'],9)
+        self.assertEqual(store.watermark('123456')['transparency'],60)
+        await self.message('设置水印',user='222222',mid=42,extra=[{'type':'image','data':{'file':'base64://AA=='}}])
+        await self.wait_for(lambda:len(self.sent())==3)
+        self.assertIn('只支持文字', self.sent()[2]['params']['message'][0]['data']['text'])
 
     async def test_level2_clear_warehouse(self):
         saved=create_post(fingerprints=True)
@@ -351,7 +351,7 @@ class QQTests(unittest.IsolatedAsyncioTestCase):
 FIXTURE = '''<!doctype html><meta charset="utf-8"><style>
 body{margin:0;background:#fafafa;font-family:sans-serif}.card{margin:12px;padding:22px;width:620px;background:white;border:1px solid #eee}
 .artist{color:green}.text{white-space:pre-wrap;font-size:22px;margin:20px 0}.media{height:160px;background:#e5eedc}button{border:0}
-</style><article class="card post"><span class="artist">ARTIST 演示作者</span><div class="text">完整正文 ❤\n第二行原文</div><div class="media">原始图片区域</div><p>点赞 123 · 评论 3</p></article>
+</style><article class="card post"><span class="artist">ARTIST 演示作者</span><div class="text">完整正文 ❤\n第二行原文</div><div class="media" role="img">原始图片区域</div><p>点赞 123 · 评论 3</p></article>
 <div class="card comment"><span class="artist">ARTIST 演示作者</span><div class="text">这是很长的艺人评论。\n''' + ('完整评论行\n'*25) + '''</div><p>点赞 28</p></div>
 <div class="card comment"><span>粉丝作者</span><div class="text">普通粉丝评论，应当被过滤。</div></div>
 '''
@@ -360,6 +360,7 @@ body{margin:0;background:#fafafa;font-family:sans-serif}.card{margin:12px;paddin
 class BrowserTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         reset()
+        store.save_settings({'capture_scale':1})
         self.browser=Browser()
         executable=os.environ.get('WEVERSE_BROWSER_EXECUTABLE')
         if not executable and shutil.which('chromium'):
@@ -473,13 +474,13 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(image.width, round(card_before['width']))
 
     async def test_translation_aligns_with_original_and_preserves_entire_photo(self):
-        store.save_settings({'watermark': ''})
+        store.save_watermark('', {'enabled': False})
         await self.page.set_content('''<style>
         body{margin:0}.post{width:420px;background:white;box-sizing:border-box;padding:16px}
         .artist{height:40px}.text{margin:16px 0;font-size:14px;white-space:pre-wrap}
         .media{height:400px;background:rgb(160,20,80)}
         </style><article class="post"><div class="artist">YEJUN</div>
-        <p class="text">예쁜하루☺️</p><div class="media"></div></article>''')
+        <p class="text">예쁜하루☺️</p><div class="media" role="img"></div></article>''')
         cfg = self.cfg | {'comment_selector': ''}
         post = await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',cfg)
         slot = post['slots'][0]
@@ -515,7 +516,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         <article class="post"><div class="community-artist-postId-_-header">
         <span class="avatar-decorator-_-image"><img src="'''+image+'''"></span>
         <span class="artist avatar-decorator-_-title">YEJUN</span></div>
-        <p class="text">예쁜하루☺️</p><div class="media"></div><p>发布时间</p></article>
+        <p class="text">예쁜하루☺️</p><div class="media" role="img"></div><p>发布时间</p></article>
         <div class="login-required-bottom-layer-_-login_required_wrap">登录后查看</div>
         <div id="consent" role="dialog"><p>Weverse asks for your consent to use your personal data</p>
         <button onclick="window.choice='reject';document.getElementById('consent').remove()">Do not consent</button>

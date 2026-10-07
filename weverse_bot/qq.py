@@ -13,7 +13,6 @@ from .render import render_post
 
 from .commands import COMMANDS, command_name, help_text, translations_from_body
 from .locks import workflow_lock
-from .watermark import upload_logo, POSITIONS
 
 
 class QQClient:
@@ -177,52 +176,6 @@ class QQClient:
         # Legacy OneBot string messages carry real CQ at segments, not plain nickname text.
         return re.findall(r'\[CQ:at,qq=([1-9][0-9]{4,19})(?:,[^\]]*)?\]', str(segments))
 
-    async def image_bytes(self, event):
-        segments = event.get('message', [])
-        images = [s['data'] for s in segments if s.get('type') == 'image'] if isinstance(segments, list) else []
-        if len(images) != 1:
-            raise ValueError('请在同一条“设置水印”消息里附上一张静态 PNG 图片。')
-        image = images[0]
-        file = str(image.get('file', ''))
-        if file.startswith('base64://'):
-            try:
-                content = base64.b64decode(file[9:], validate=True)
-            except Exception as exc:
-                raise ValueError('PNG 图片编码无效。') from exc
-            if len(content) > 4 * 1024 * 1024:
-                raise ValueError('水印 PNG 不能超过 4 MB。')
-            return content
-        url = image.get('url')
-        if not url and file:
-            info = await self.call('get_image', {'file': file})
-            url = (info or {}).get('url')
-        if not url:
-            raise ValueError('OneBot 没有提供可下载的图片 URL。请以 PNG 文件发送，或由主人在 WebUI 上传。')
-        import httpx
-        from urllib.parse import urlsplit, urlunsplit, urljoin
-        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-            for _ in range(4):
-                parsed = urlsplit(url)
-                host = parsed.hostname or ''
-                if (parsed.scheme not in ('http', 'https') or parsed.username or parsed.password or
-                    parsed.port not in (None, 80, 443) or
-                    not any(host == d or host.endswith('.' + d) for d in ('qq.com', 'qq.com.cn', 'qpic.cn', 'gtimg.cn'))):
-                    raise ValueError('仅下载 QQ 官方图片域名的水印；其他来源请通过 WebUI 上传。')
-                url = urlunsplit(('https', host, parsed.path, parsed.query, ''))
-                async with client.stream('GET', url) as response:
-                    if response.status_code in (301, 302, 303, 307, 308):
-                        url = urljoin(url, response.headers.get('location', ''))
-                        continue
-                    if response.status_code != 200:
-                        raise ValueError('QQ 图片下载失败，请重新发送 PNG，或通过 WebUI 上传。')
-                    content = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        content.extend(chunk)
-                        if len(content) > 4 * 1024 * 1024:
-                            raise ValueError('水印 PNG 不能超过 4 MB。')
-                    return bytes(content)
-        raise ValueError('QQ 图片重定向过多，请通过 WebUI 上传。')
-
     async def handle(self, event):
         group, user = str(event.get('group_id', '')), str(event.get('user_id', ''))
         text = self.text(event)
@@ -300,28 +253,23 @@ class QQClient:
                 result = await asyncio.to_thread(store.clear_warehouse, group)
                 await self.send(group, f"已永久删除本群 {result['posts']} 个档案及 {result['memories']} 条历史译文，不可恢复。\n水印和成员权限保留；本群自动记录已暂停，可由主人在 WebUI 恢复。")
             elif command == '设置水印':
-                if text != command:
-                    raise ValueError('请发送 设置水印，并在同一条消息附上 PNG 图片。')
-                content = await self.image_bytes(event)
-                if not store.authorized(group, user, 1):
-                    raise ValueError('你的水印修改权限已取消。')
-                await asyncio.to_thread(upload_logo, content, group)
-                await self.send(group, '本群 PNG 水印已更新；下次烤制或重新生成图片时生效。')
+                parts = text.split(maxsplit=1)
+                if len(parts) != 2:
+                    raise ValueError('格式：设置水印 文字内容；水印只支持文字。')
+                store.save_watermark(group, {'text': parts[1], 'enabled': True})
+                await self.send(group, '本群文字水印已保存，将在正文和评论合成后最后添加。')
             elif command == '调整水印':
-                parts = text.split()
-                if len(parts) not in (4, 5) or parts[1] not in POSITIONS or any(not p.isdigit() for p in parts[2:]):
-                    raise ValueError('格式：调整水印 底部/左上/右上/左下/右下 大小百分比 透明度百分比 [边距像素]\n例如：调整水印 底部 18 70 16')
-                changes = {'position': POSITIONS[parts[1]], 'width_pct': int(parts[2]), 'opacity': int(parts[3])}
-                if len(parts) == 5:
-                    changes['margin'] = int(parts[4])
-                store.save_watermark(group, changes)
-                await self.send(group, '本群水印位置、大小和透明度已保存；角落位置可能覆盖原图，底部位置另加区域。')
+                match = re.fullmatch(r'调整水印\s+([1-9])\s+(\d+)\s+(\d+)', text)
+                if not match:
+                    raise ValueError('格式：调整水印 位置1-9 字号 透明度0-100；字号0跟随译文。')
+                store.save_watermark(group, {'position': int(match[1]), 'font_size': int(match[2]),
+                                            'transparency': int(match[3])})
+                await self.send(group, '文字水印位置、字号和透明度已保存。')
             elif command == '查看水印':
                 if text != command:
                     raise ValueError('请单独发送 查看水印。')
                 cfg = store.watermark(group)
-                position = next(k for k, v in POSITIONS.items() if v == cfg['position'])
-                await self.send(group, f"本群 PNG 水印：{'启用' if cfg['enabled'] else '停用'}\n位置：{position}；宽度：{cfg['width_pct']}%；透明度：{cfg['opacity']}%；边距：{cfg['margin']}px\n{'尚未上传 Logo。' if not cfg['logo'] else '下次生成图片时生效。'}", cfg['logo'] if cfg['logo'] else None)
+                await self.send(group, f"本群文字水印：{cfg['text']}\n位置：{cfg['position']}；字号：{cfg['font_size'] or '跟随译文'}；透明度：{cfg['transparency']}%\n颜色：{cfg['color']}；描边：{'启用' if cfg['outline'] else '关闭'}")
 
 
 qq = QQClient()

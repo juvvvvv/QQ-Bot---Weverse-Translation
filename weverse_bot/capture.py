@@ -10,6 +10,7 @@ from playwright.async_api import async_playwright
 from . import store
 from .page_cleanup import (reject_optional_consent, remove_site_chrome,
                            ensure_author_visible, prepare_emoji_text)
+from .capture_layout import read_comment_counts, add_count_row, measure_card, screenshot_card
 
 
 def weverse_url(raw, feed=False):
@@ -33,7 +34,8 @@ class Browser:
         self.mode = None
 
     async def open(self, headed=False):
-        if self.context and self.mode == ('headed' if headed else 'headless'):
+        mode = ('headed' if headed else 'headless', store.settings()['capture_scale'])
+        if self.context and self.mode == mode:
             return self.context
         if self.context:
             await self.context.close()
@@ -44,9 +46,9 @@ class Browser:
             str(store.DATA / 'browser'), headless=not headed,
             executable_path=__import__('os').environ.get('WEVERSE_BROWSER_EXECUTABLE') or None,
             viewport={'width': store.settings()['capture_width'], 'height': 1000},
-            device_scale_factor=1, locale='zh-CN',
+            device_scale_factor=mode[1], locale='zh-CN',
         )
-        self.mode = 'headed' if headed else 'headless'
+        self.mode = mode
         return self.context
 
     async def close(self):
@@ -155,7 +157,9 @@ class Browser:
                     items.append((card, cfg['comment_text_selector'], f'艺人评论 {len(items)}'))
             if len(items) > 30:
                 raise ValueError('艺人评论超过 29 条，请缩小评论抓取范围后分批处理。')
+        counts = await read_comment_counts(page, cfg)
         fragments, slots, offset = [], [], 0
+        gap = round(16 * await page.evaluate('devicePixelRatio'))
         for index, (card, text_selector, label) in enumerate(items):
             text_node = card.locator(text_selector)
             if await text_node.count() != 1:
@@ -199,37 +203,44 @@ class Browser:
             # Consent can also appear late, after media/fonts finish loading.
             # Dismiss it before measuring the final screenshot/translation coordinates.
             await reject_optional_consent(page)
-            boxes = await card.evaluate('''(el, selector) => {
-                const a=el.getBoundingClientRect(), b=el.querySelector(selector).getBoundingClientRect();
-                const style=getComputedStyle(el.querySelector(selector));
-                return {w:a.width,h:a.height,y:b.bottom-a.top,x:b.left-a.left,
-                        text_width:b.width,font_size:parseFloat(style.fontSize)};
-            }''', text_selector)
-            if boxes['h'] > 30000 or boxes['w'] * boxes['h'] > 24_000_000:
-                raise ValueError('帖子太长，请分批截图。')
-            raw = await card.screenshot(type='png', animations='disabled', timeout=20000)
+            if index == 0:
+                await add_count_row(card, counts)
+            # Page screenshot clips start at the current viewport origin. Keep
+            # that origin at document (0, 0) before measuring document coordinates,
+            # including cards taller than the viewport and comments further down.
+            await page.evaluate('window.scrollTo(0,0)')
+            boxes = await measure_card(card, text_selector)
+            raw = await screenshot_card(page, boxes)
             image = Image.open(io.BytesIO(raw)).convert('RGB')
+            scale = image.width / boxes['w']
+            wanted_height = round(boxes['target_height'] * scale)
+            if wanted_height > image.height:
+                padded = Image.new('RGB', (image.width, wanted_height), 'white')
+                padded.paste(image)
+                image = padded
             if boxes['y'] < 0 or boxes['y'] > boxes['h']:
                 raise ValueError('原文位置不在卡片范围内，请重新校准。')
-            y = offset + round(boxes['y'] * image.height / boxes['h'])
-            scale = image.width / boxes['w']
+            y = offset + round(boxes['y'] * scale)
             fingerprint = hashlib.sha256(f'{url}\n{label == "正文"}\n{author}\n{text}'.encode()).hexdigest()
             slots.append({'key': str(index), 'label': label, 'y': y, 'text': text,
                           'x': round(boxes['x'] * scale), 'width': round(boxes['text_width'] * scale),
                           'font_size': boxes['font_size'] * scale,
+                          'scale': scale, 'bottom_padding': round(boxes['padding'] * scale),
+                          'trailing_text': boxes['trailing_text'],
+                          **({'comment_counts': counts} if index == 0 else {}),
                           'fingerprint': fingerprint, 'author': author,
                           'reusable': bool(store.memory(fingerprint, group))})
             fragments.append(image)
-            offset += image.height + 16
+            offset += image.height + gap
         width = max(f.width for f in fragments)
-        height = sum(f.height for f in fragments) + 16 * (len(fragments) - 1)
+        height = sum(f.height for f in fragments) + gap * (len(fragments) - 1)
         if width * height > 24_000_000 or height > 30000:
             raise ValueError('长图过大，请分批抓取。')
         combined = Image.new('RGB', (width, height), 'white')
         y = 0
         for im in fragments:
             combined.paste(im, (0, y))
-            y += im.height + 16
+            y += im.height + gap
         name = f'originals/{uuid.uuid4().hex}.png'
         combined.save(store.DATA / name)
         note = '仅记录本次页面中已加载、匹配艺人标识的卡片；不保证未加载或折叠的评论完整。'

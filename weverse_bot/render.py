@@ -3,6 +3,7 @@ import io
 from PIL import Image, ImageOps, UnidentifiedImageError
 from . import store
 from .text_image import render_text_images
+from .watermark import text_job, apply_text
 
 MAX_PIXELS = 24_000_000
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
@@ -32,9 +33,12 @@ def band(width, label, text, size, font_path=''):
                                       'text_width': width - pad * 2}], font_path)[0]
 
 
-def compose(original, slots, translations, watermark, size=24, font_path='', logo_config=None):
-    with Image.open(original) as image:
-        source = image.convert('RGB')
+def compose(original, slots, translations, watermark, size=24, font_path=''):
+    if isinstance(original, Image.Image):
+        source = original.convert('RGB')
+    else:
+        with Image.open(original) as image:
+            source = image.convert('RGB')
     if len(translations) > 30 or sum(len(t) for t in translations.values()) > 20000:
         raise ValueError('单张图片最多 30 段翻译，合计最多 20000 字。')
     if set(translations) - {str(s['key']) for s in slots}:
@@ -50,21 +54,29 @@ def compose(original, slots, translations, watermark, size=24, font_path='', log
             text_width = int(slot.get('width', source.width - x * 2))
             if x < 0 or text_width < 24 or x + text_width > source.width:
                 raise ValueError('正文边距超出了截图宽度，请重新读取网页或重新选择插入位置。')
-            text_size = max(12, min(48, float(slot.get('font_size', size))))
+            pixel_scale = float(slot.get('scale', 1))
+            text_size = max(12 * pixel_scale, min(48 * pixel_scale, float(slot.get('font_size', size))))
             positions.append(y)
             jobs.append({'text': text, 'size': text_size, 'x': x, 'text_width': text_width})
-    if watermark:
-        jobs.append({'text': watermark, 'size': max(12, size - 6), 'x': 16,
-                     'text_width': source.width - 32, 'centered': True})
+    scale = float(slots[0].get('scale', 1)) if slots else 1
+    body_size = jobs[0]['size'] if jobs else (
+        max(12 * scale, min(48 * scale, float(slots[0].get('font_size', size * scale))))
+        if slots else size * scale)
+    cfg = store.WATERMARK_DEFAULTS | (watermark if isinstance(watermark, dict) else {'text': watermark})
+    mark_job = text_job(source.width, cfg, body_size, scale)
+    if mark_job:
+        jobs.append(mark_job)
     images = render_text_images(source.width, jobs, font_path)
-    mark = images.pop() if watermark else None
+    mark = images.pop() if mark_job else None
+    translated_slots = [s for s in slots if translations.get(str(s['key']), '').strip()]
+    for index, slot in enumerate(translated_slots):
+        if slot.get('trailing_text'):
+            ink = ImageOps.invert(images[index]).getbbox()
+            if ink:
+                images[index] = images[index].crop((0, 0, images[index].width, ink[3]))
     insertions = list(zip(positions, images))
     insertions.sort(key=lambda x: x[0])
-    logo_area = 0
-    if logo_config and logo_config.get('enabled') and logo_config.get('logo') and logo_config['position'] == 'footer':
-        logo = Image.open(store.DATA / logo_config['logo'])
-        logo_area = min(1000, round(source.width * logo_config['width_pct'] / 100 * logo.height / logo.width)) + 2 * logo_config['margin']
-    height = source.height + sum(b.height for _, b in insertions) + logo_area
+    height = source.height + sum(b.height for _, b in insertions)
     if height > 40000 or source.width * height > 48_000_000:
         raise ValueError('合成图片过长，请减少译文或分开处理。')
     result = Image.new('RGB', (source.width, height), 'white')
@@ -77,15 +89,7 @@ def compose(original, slots, translations, watermark, size=24, font_path='', log
         target += segment.height
         cursor = y
     result.paste(source.crop((0, cursor, source.width, source.height)), (0, target))
-    if mark is not None:
-        mark.putalpha(mark.getchannel('A').point(lambda alpha: round(alpha * .2)))
-        layer = result.convert('RGBA')
-        layer.alpha_composite(mark, (0, (height - mark.height) // 2))
-        result = layer.convert('RGB')
-    if logo_config:
-        from .watermark import overlay_logo
-        result = overlay_logo(result, logo_config, height - logo_area if logo_area else height)
-    return result
+    return apply_text(result, mark, cfg, scale)
 
 
 def _render_post(post_id, translations, reuse=False, merge=False):
@@ -106,7 +110,7 @@ def _render_post(post_id, translations, reuse=False, merge=False):
         raise ValueError('请填写至少一段翻译，或先保存可以复用的历史译文。')
     cfg = store.settings()
     result = compose(store.DATA / post['original'], post['slots'], selected,
-                     cfg['watermark'], cfg['font_size'], cfg['font_path'], store.watermark(post['group_id']))
+                     store.watermark(post['group_id']), cfg['font_size'], cfg['font_path'])
     # Unique output names avoid stale browser caches and preserve older revision files.
     import uuid
     name = f'outputs/{post_id}-{uuid.uuid4().hex[:8]}.png'

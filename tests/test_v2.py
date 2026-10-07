@@ -11,7 +11,6 @@ from test_workflow import reset, create_post, source_image
 from weverse_bot import store
 from weverse_bot.render import render_post, compose
 from weverse_bot.commands import command_name, translations_from_body, help_text
-from weverse_bot.watermark import upload_logo
 
 
 class V2Tests(unittest.TestCase):
@@ -40,32 +39,6 @@ class V2Tests(unittest.TestCase):
         self.assertNotIn('设置权限 -l',help_text(2))
         self.assertIn('设置权限 -l',help_text(3))
 
-    def test_logo_footer_preserves_source_and_corner_respects_transparency(self):
-        source,filename=source_image()
-        logo=Image.new('RGBA',(80,40),(255,0,0,128));buf=io.BytesIO();logo.save(buf,format='PNG')
-        upload_logo(buf.getvalue(),'123456')
-        slots=[{'key':'0','label':'正文','y':150}]
-        result=compose(store.DATA/filename,slots,{'0':'中文译文'},'',logo_config=store.watermark('123456'))
-        self.assertEqual(result.crop((0,0,320,150)).tobytes(),source.tobytes())
-        store.save_watermark('123456',{'position':'top-right','opacity':0})
-        transparent=compose(store.DATA/filename,slots,{'0':'中文译文'},'',logo_config=store.watermark('123456'))
-        self.assertEqual(transparent.crop((0,0,320,150)).tobytes(),source.tobytes())
-        store.save_watermark('123456',{'opacity':100})
-        visible=compose(store.DATA/filename,slots,{'0':'中文译文'},'',logo_config=store.watermark('123456'))
-        self.assertNotEqual(visible.crop((0,0,320,150)).tobytes(),source.tobytes())
-
-    def test_png_validation_and_replacement(self):
-        im=Image.new('RGBA',(32,16),(0,255,0,100));buf=io.BytesIO();im.save(buf,format='PNG')
-        first=upload_logo(buf.getvalue(),'123456')
-        second=upload_logo(buf.getvalue(),'123456')
-        self.assertFalse((store.DATA/first['logo']).exists())
-        self.assertTrue((store.DATA/second['logo']).exists())
-        with self.assertRaises(ValueError):upload_logo(b'bad','123456')
-        jpg=io.BytesIO();im.convert('RGB').save(jpg,format='JPEG')
-        with self.assertRaises(ValueError):upload_logo(jpg.getvalue(),'123456')
-        with self.assertRaises(ValueError):store.save_watermark('123456',{'opacity':101})
-        with self.assertRaises(ValueError):store.save_watermark('123456',{'position':'invalid'})
-
     def test_permanent_clear_removes_all_revisions_and_memories_but_preserves_other_group(self):
         a=create_post(group='123456',fingerprints=True)
         b=create_post(group='234567',fingerprints=True)  # Shares the original file intentionally.
@@ -74,8 +47,7 @@ class V2Tests(unittest.TestCase):
         other=render_post(b['id'],{'0':'另一个群','1':'另一个群评论'})
         for _ in range(205):create_post(group='123456')
         store.set_level('123456','222222',2)
-        logo=Image.new('RGBA',(32,16),(0,0,255,200));buf=io.BytesIO();logo.save(buf,format='PNG')
-        cfg=upload_logo(buf.getvalue(),'123456')
+        cfg=store.save_watermark('123456',{'text':'保留的水印'})
         result=store.clear_warehouse('123456')
         self.assertEqual(result['posts'],206)
         self.assertEqual(store.posts(group='123456'),[])
@@ -85,7 +57,7 @@ class V2Tests(unittest.TestCase):
         self.assertTrue((store.DATA/b['original']).exists())
         self.assertIsNone(store.memory('post-hash','123456'))
         self.assertEqual(store.memory('post-hash','234567'),'另一个群')
-        self.assertTrue((store.DATA/cfg['logo']).exists())
+        self.assertEqual(store.watermark('123456')['text'], cfg['text'])
         self.assertEqual(store.permission_level('123456','222222'),2)
         store.clear_warehouse('234567')
         self.assertFalse((store.DATA/b['original']).exists())

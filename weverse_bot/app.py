@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
@@ -21,7 +21,7 @@ from .qq import qq
 SESSION = secrets.token_urlsafe(32)
 CSRF = secrets.token_urlsafe(32)
 from .locks import workflow_lock as operation_lock
-from .watermark import upload_logo
+from .render import compose
 from .commands import COMMANDS, help_text
 monitor_state = {'state': '未启用', 'last_run': None, 'last_error': ''}
 monitor_wakeup = asyncio.Event()
@@ -31,6 +31,7 @@ def serialize(post):
     post = dict(post)
     post['original_url'] = '/media/' + post['original']
     post['output_url'] = '/media/' + post['output'] if post['output'] else None
+    post['comment_counts'] = post['slots'][0].get('comment_counts') if post['slots'] else None
     for slot in post['slots']:
         slot['reusable'] = bool(slot.get('fingerprint') and store.memory(slot['fingerprint'], post['group_id']))
     return post
@@ -164,6 +165,7 @@ async def status():
 @app.get('/api/settings')
 async def settings():
     cfg = store.settings()
+    cfg.pop('watermark', None)
     cfg['ws_token_set'] = bool(cfg.pop('ws_token'))
     return cfg
 
@@ -178,8 +180,9 @@ async def update_settings(body: SettingsUpdate):
     if set(value) - set(store.DEFAULTS):
         raise ValueError('设置包含未知字段。')
     cfg = store.settings() | value
-    for name in ('owner_qq', 'ws_url', 'ws_token', 'watermark', 'font_path', 'post_selector', 'text_selector',
-                 'comment_selector', 'comment_text_selector', 'artist_selector', 'author_selector', 'expand_selector', 'feed_url', 'feed_link_selector'):
+    for name in ('owner_qq', 'ws_url', 'ws_token', 'font_path', 'post_selector', 'text_selector',
+                 'comment_selector', 'comment_text_selector', 'artist_selector', 'author_selector', 'expand_selector',
+                 'comment_count_selector', 'artist_comment_count_selector', 'feed_url', 'feed_link_selector'):
         if not isinstance(cfg[name], str) or len(cfg[name]) > 2000:
             raise ValueError(f'{name} 字段格式不正确或过长。')
     if cfg['owner_qq'] and not re.fullmatch(r'[1-9][0-9]{4,19}', cfg['owner_qq']):
@@ -197,6 +200,8 @@ async def update_settings(body: SettingsUpdate):
     for key, low, high in [('font_size', 12, 48), ('capture_width', 480, 1600), ('poll_seconds', 60, 86400), ('max_scrolls', 1, 30)]:
         if type(cfg[key]) is not int or not low <= cfg[key] <= high:
             raise ValueError(f'{key} 需要在 {low}–{high} 范围内。')
+    if type(cfg['capture_scale']) is not int or cfg['capture_scale'] not in (1, 2, 3):
+        raise ValueError('截图像素倍率支持 1、2、3。')
     if type(cfg['headless']) is not bool or type(cfg['monitor_enabled']) is not bool:
         raise ValueError('开关需为布尔值。')
     if cfg['monitor_enabled'] and not all(cfg[k] for k in ('post_selector', 'text_selector', 'artist_selector', 'author_selector', 'feed_link_selector')):
@@ -307,25 +312,43 @@ class WatermarkUpdate(BaseModel):
 @app.get('/api/watermark')
 async def watermark(group_id: str = ''):
     check_group(group_id)
-    cfg = store.watermark(group_id)
-    return cfg | {'logo_url': '/media/' + cfg['logo'] if cfg['logo'] else None}
+    return store.watermark(group_id)
 
 
 @app.put('/api/watermark')
 async def update_watermark(body: WatermarkUpdate, group_id: str = ''):
     check_group(group_id)
-    if set(body.changes) - {'enabled', 'position', 'width_pct', 'opacity', 'margin'}:
-        raise ValueError('水印设置包含未知字段。Logo 请使用上传接口。')
     async with operation_lock:
         return store.save_watermark(group_id, body.changes)
 
 
-@app.post('/api/watermark/upload')
-async def upload_watermark(file: UploadFile = File(...), group_id: str = Form('')):
+class WatermarkPreview(BaseModel):
+    changes: dict
+    post_id: str | None = None
+
+
+@app.post('/api/watermark/preview')
+async def preview_watermark(body: WatermarkPreview, group_id: str = ''):
     check_group(group_id)
-    content = await file.read(4 * 1024 * 1024 + 1)
+    cfg = store.validate_watermark(store.watermark(group_id) | body.changes)
+    settings = store.settings()
+    def render_preview():
+        import io
+        from PIL import Image, ImageDraw
+        if body.post_id:
+            post = store.get_post(body.post_id)
+            image = compose(store.DATA / post['original'], post['slots'], post['translations'], cfg,
+                            settings['font_size'], settings['font_path'])
+        else:
+            base = Image.new('RGB', (640, 360), '#edf2f7')
+            ImageDraw.Draw(base).rectangle((0, 0, 319, 359), fill='#2d3748')
+            image = compose(base, [], {}, cfg, settings['font_size'], settings['font_path'])
+        stream = io.BytesIO()
+        image.save(stream, format='PNG')
+        return stream.getvalue()
     async with operation_lock:
-        return await asyncio.to_thread(upload_logo, content, group_id)
+        content = await asyncio.to_thread(render_preview)
+    return Response(content, media_type='image/png', headers={'Cache-Control': 'no-store'})
 
 
 @app.post('/api/posts/{post_id}/send')
@@ -419,7 +442,7 @@ async def events():
 
 @app.get('/media/{folder}/{filename}')
 async def media(folder: str, filename: str):
-    if folder not in ('originals', 'outputs', 'logos') or not re.fullmatch(r'[a-f0-9-]+\.png', filename):
+    if folder not in ('originals', 'outputs') or not re.fullmatch(r'[a-f0-9-]+\.png', filename):
         raise HTTPException(404)
     path = store.DATA / folder / filename
     if not path.is_file():

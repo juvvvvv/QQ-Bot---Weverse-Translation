@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -17,11 +18,13 @@ for folder in ('originals', 'outputs', 'browser', 'logos'):
 
 DEFAULTS = {
     'owner_qq': '', 'groups': [], 'ws_url': 'ws://127.0.0.1:3001',
-    'ws_token': '', 'watermark': 'PLAVE · 中文翻译', 'font_path': '',
-    'font_size': 24, 'capture_width': 720, 'headless': True,
+    'ws_token': '', 'font_path': '',
+    'font_size': 24, 'capture_width': 720, 'capture_scale': 2, 'headless': True,
     'post_selector': '', 'text_selector': '', 'comment_selector': '',
     'comment_text_selector': '', 'artist_selector': '', 'author_selector': '',
     'expand_selector': '', 'feed_url': 'https://weverse.io/plave/artist',
+    'comment_count_selector': '.comment-total-count-and-refresh-_-count',
+    'artist_comment_count_selector': '.base-comment-artist-count-and-toggle-_-count',
     'feed_link_selector': '', 'monitor_enabled': False, 'poll_seconds': 300,
     'max_scrolls': 8, 'monitor_paused_groups': [],
 }
@@ -218,25 +221,51 @@ def latest_by_url(url, group):
     return unpack(row) if row else None
 
 
-WATERMARK_DEFAULTS = {'logo': None, 'enabled': True, 'position': 'footer',
-                      'width_pct': 18, 'opacity': 70, 'margin': 16}
+WATERMARK_DEFAULTS = {'text': '@PLAVE_PixelDiary', 'enabled': True, 'position': 5,
+                      'font_size': 0, 'color': '#000000', 'outline': False,
+                      'outline_color': '#ffffff', 'outline_width': 1, 'transparency': 80}
 
 
 def watermark(group=''):
     with db() as c:
         row = c.execute('SELECT value FROM watermarks WHERE group_id=?', (str(group),)).fetchone()
-    return WATERMARK_DEFAULTS | (json.loads(row['value']) if row else {})
+        if row is None and group:
+            row = c.execute("SELECT value FROM watermarks WHERE group_id='' ").fetchone()
+    raw = json.loads(row['value']) if row else {}
+    if 'text' in raw:
+        return WATERMARK_DEFAULTS | {k: v for k, v in raw.items() if k in WATERMARK_DEFAULTS}
+    # Old files are retained, but their PNG logos are no longer rendered.
+    legacy_text = settings().get('watermark', '@PLAVE_PixelDiary')
+    value = dict(WATERMARK_DEFAULTS)
+    if legacy_text != 'PLAVE · 中文翻译':
+        value.update(text=legacy_text, enabled=bool(legacy_text))
+    if raw:
+        positions = {'top-left': 1, 'top-right': 3, 'bottom-left': 7, 'bottom-right': 9, 'footer': 5}
+        value['position'] = positions.get(raw.get('position'), 5)
+    return value
+
+
+def validate_watermark(value):
+    if set(value) - set(WATERMARK_DEFAULTS):
+        raise ValueError('水印设置包含未知字段；只支持文字水印。')
+    for key, lo, hi in (('position', 1, 9), ('font_size', 0, 96), ('transparency', 0, 100), ('outline_width', 0, 8)):
+        if type(value[key]) is not int or not lo <= value[key] <= hi:
+            raise ValueError(f'{key} 必须在 {lo}–{hi} 范围内。')
+    if value['font_size'] != 0 and value['font_size'] < 8:
+        raise ValueError('水印字号为 0 时跟随译文，手动字号需为 8–96。')
+    for key in ('enabled', 'outline'):
+        if type(value[key]) is not bool:
+            raise ValueError(f'{key} 需为布尔值。')
+    for key in ('color', 'outline_color'):
+        if not isinstance(value[key], str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', value[key]):
+            raise ValueError('水印颜色需为六位十六进制颜色，例如 #ffffff。')
+    if not isinstance(value['text'], str) or len(value['text']) > 200:
+        raise ValueError('水印文字最多 200 字。')
+    return value
 
 
 def save_watermark(group, changes):
-    value = watermark(group) | changes
-    if value['position'] not in ('footer', 'top-left', 'top-right', 'bottom-left', 'bottom-right'):
-        raise ValueError('水印位置支持：底部、左上、右上、左下、右下。')
-    for key, lo, hi in (('width_pct', 5, 50), ('opacity', 0, 100), ('margin', 0, 100)):
-        if type(value[key]) is not int or not lo <= value[key] <= hi:
-            raise ValueError(f'{key} 必须在 {lo}–{hi} 范围内。')
-    if type(value['enabled']) is not bool:
-        raise ValueError('水印启用状态需为布尔值。')
+    value = validate_watermark(watermark(group) | changes)
     with db() as c:
         c.execute('INSERT OR REPLACE INTO watermarks VALUES (?,?)', (str(group), json.dumps(value)))
     return value
