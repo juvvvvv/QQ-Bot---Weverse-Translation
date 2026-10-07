@@ -10,13 +10,13 @@ from pathlib import Path
 
 TEST_DATA = tempfile.TemporaryDirectory(prefix='plave-tests-')
 os.environ['WEVERSE_DATA_DIR'] = TEST_DATA.name
-from PIL import Image
+from PIL import Image, ImageOps
 from fastapi.testclient import TestClient
 from weverse_bot import store
 from weverse_bot.app import app
 from weverse_bot.render import compose, band, render_post
 from weverse_bot.capture import Browser, weverse_url
-from weverse_bot.page_cleanup import reject_optional_consent
+from weverse_bot.page_cleanup import reject_optional_consent, prepare_emoji_text
 from weverse_bot.qq import QQClient
 import websockets
 
@@ -378,6 +378,65 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         await self.page.locator('.post .text').evaluate("el=>{el.style.height='10px';el.style.overflow='hidden'}")
         with self.assertRaisesRegex(ValueError,'截断'):
             await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',self.cfg)
+
+    async def test_emoji_graphemes_preserved_and_repeat_preparation_is_stable(self):
+        text = '예쁜하루☺️ 👨‍👩‍👧‍👦 🇰🇷 1️⃣ 👍🏽 ©︎'
+        node = self.page.locator('.post .text')
+        await node.evaluate('(el,text)=>el.textContent=text', text)
+        expected = ['☺️', '👨‍👩‍👧‍👦', '🇰🇷', '1️⃣', '👍🏽']
+        self.assertEqual(await prepare_emoji_text(node), expected)
+        self.assertEqual(await node.inner_text(), text)
+        html = await node.inner_html()
+        self.assertEqual(await prepare_emoji_text(node), expected)
+        self.assertEqual(await node.inner_html(), html)
+        self.assertEqual(await node.locator('[data-wvbot-emoji]').count(), 5)
+
+    async def test_text_without_emoji_keeps_its_layout(self):
+        node = self.page.locator('.post .text')
+        await node.evaluate('(el,html)=>el.innerHTML=html', '<span>普通正文</span>\n第二行')
+        html = await node.evaluate('el=>el.outerHTML')
+        box = await node.bounding_box()
+        self.assertEqual(await prepare_emoji_text(node), [])
+        self.assertEqual(await node.evaluate('el=>el.outerHTML'), html)
+        self.assertEqual(await node.bounding_box(), box)
+
+    async def test_emoji_ink_fits_inside_tight_line_after_preparation(self):
+        await self.page.set_content('''<style>body{margin:0;background:white}
+        p{margin:0;font-size:32px;line-height:12px;overflow:hidden;width:300px;color:black}
+        </style><p>☺️</p>''')
+        node = self.page.locator('p')
+        before = Image.open(io.BytesIO(await node.screenshot())).convert('RGB')
+        self.assertEqual(await prepare_emoji_text(node), ['☺️'])
+        await self.page.evaluate('document.fonts.ready')
+        after = Image.open(io.BytesIO(await node.screenshot())).convert('RGB')
+        ink = ImageOps.invert(after).getbbox()
+        self.assertIsNotNone(ink)
+        self.assertGreater(ink[1], 0)
+        self.assertLess(ink[3], after.height)
+        self.assertEqual(before.width, after.width)
+        self.assertGreater(after.height, before.height)
+        self.assertEqual(await node.inner_text(), '☺️')
+
+    async def test_emoji_capture_keeps_width_media_and_insertion_below_original(self):
+        text = '예쁜하루☺️ 👨‍👩‍👧‍👦'
+        node = self.page.locator('.post .text')
+        await node.evaluate('(el,text)=>el.textContent=text', text)
+        media_before = await self.page.locator('.post .media').bounding_box()
+        card_before = await self.page.locator('.post').bounding_box()
+        cfg = self.cfg | {'comment_selector': ''}
+        post = await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',cfg)
+        media_after = await self.page.locator('.post .media').bounding_box()
+        card_after = await self.page.locator('.post').bounding_box()
+        emoji_box = await node.locator('[data-wvbot-emoji]').last.bounding_box()
+        slot = post['slots'][0]
+        self.assertEqual(slot['text'], text)
+        self.assertEqual(card_before['width'], card_after['width'])
+        self.assertEqual(media_before['width'], media_after['width'])
+        self.assertEqual(media_before['height'], media_after['height'])
+        self.assertGreaterEqual(slot['y'], emoji_box['y'] + emoji_box['height'] - card_after['y'] - 1)
+        self.assertLessEqual(slot['y'], media_after['y'] - card_after['y'] + 1)
+        with Image.open(store.DATA / post['original']) as image:
+            self.assertEqual(image.width, round(card_before['width']))
 
     async def test_consent_and_site_chrome_do_not_cover_author_or_media(self):
         avatar = io.BytesIO()

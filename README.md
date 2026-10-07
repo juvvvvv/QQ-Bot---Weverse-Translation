@@ -5,6 +5,7 @@
 先阅读 [中文 HTML 说明书](docs/manual.html)。下载整个项目后可离线打开该文件。Mac 使用 Python 3.13、`首次安装.command` 和 `启动工作台.command`；Windows 使用 Python 3.14、`首次安装.bat` 和 `启动工作台.bat`。
 
 截图遮挡修正及旧项目更新步骤见 [截图修正说明](docs/capture-fix-validation.md)。
+原文 emoji 字体和防裁切修正见 [表情修正说明](docs/emoji-fix-validation.md)，整图分辨率与烤制版式暂未调整。
 后续讨论的动态分类、文字水印、翻译名称和模拟群聊需求记录在 [待更新清单](docs/next-version-requirements.md)，尚未进入程序。
 
 ## v2 群指令

@@ -8,7 +8,8 @@ from urllib.parse import urlsplit, urlunsplit
 from PIL import Image
 from playwright.async_api import async_playwright
 from . import store
-from .page_cleanup import reject_optional_consent, remove_site_chrome, ensure_author_visible
+from .page_cleanup import (reject_optional_consent, remove_site_chrome,
+                           ensure_author_visible, prepare_emoji_text)
 
 
 def weverse_url(raw, feed=False):
@@ -168,6 +169,7 @@ class Browser:
                         await page.wait_for_timeout(200)
             if await text_node.evaluate('(el) => el.scrollHeight > el.clientHeight + 3'):
                 raise ValueError(f'{label}原文仍被折叠或截断，请展开全文或手动截图。')
+            await prepare_emoji_text(text_node)
             # Load images inside the selected card before taking screenshot; failed loads are blockers.
             await card.evaluate('''async el => {
                 for (const img of el.querySelectorAll('img')) {
@@ -180,6 +182,8 @@ class Browser:
                 }
             }''')
             await page.evaluate('document.fonts.ready')
+            if await text_node.evaluate('(el) => el.scrollHeight > el.clientHeight + 3'):
+                raise ValueError(f'{label}正文区域无法完整显示表情，请检查正文高度或手动截图。')
             text = (await text_node.inner_text()).strip()
             author_node = card.locator(cfg['author_selector'])
             if await author_node.count() != 1:

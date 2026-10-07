@@ -94,6 +94,64 @@ async def remove_site_chrome(page):
     await page.add_style_tag(content=SITE_CHROME)
 
 
+async def prepare_emoji_text(text_node):
+    """Give complete emoji graphemes a color font and room inside the line box.
+
+    Do not change the original code points or unlock genuinely truncated text.
+    Only the selected original text block is modified, never the media/header.
+    """
+    return await text_node.evaluate(r'''el => {
+        const segmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+        const emoji = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u;
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        const found = [];
+        const containers = new Set([el]);
+        for (const node of nodes) {
+            if (node.parentElement.closest('script, style, svg')) continue;
+            const existing = node.parentElement.closest('[data-wvbot-emoji]');
+            if (existing) {
+                found.push(node.data);
+                continue;
+            }
+            const parts = [...segmenter.segment(node.data)];
+            const isEmoji = value => emoji.test(value) && !value.includes('\ufe0e');
+            if (!parts.some(part => isEmoji(part.segment))) continue;
+            const fragment = document.createDocumentFragment();
+            containers.add(node.parentElement);
+            for (const {segment} of parts) {
+                if (!isEmoji(segment)) {
+                    fragment.append(document.createTextNode(segment));
+                    continue;
+                }
+                found.push(segment);
+                const span = document.createElement('span');
+                span.dataset.wvbotEmoji = '';
+                span.textContent = segment;
+                span.style.cssText = 'font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif!important;'
+                    + 'font-size:inherit!important;display:inline-block!important;'
+                    + 'line-height:1.3!important;padding:.08em .04em!important;'
+                    + 'vertical-align:baseline!important;white-space:nowrap!important;'
+                    + 'overflow:visible!important;';
+                fragment.append(span);
+            }
+            node.replaceWith(fragment);
+        }
+        if (found.length) {
+            for (const container of containers) {
+                const style = getComputedStyle(container);
+                const minimum = parseFloat(style.fontSize) * 1.6;
+                const current = parseFloat(style.lineHeight);
+                if (!Number.isFinite(current) || current < minimum) {
+                    container.style.setProperty('line-height', minimum + 'px', 'important');
+                }
+            }
+        }
+        return found;
+    }''')
+
+
 async def ensure_author_visible(card, author):
     """Keep the real author header/avatar, including the responsive layout."""
     header = card.locator('.community-artist-postId-_-header')
