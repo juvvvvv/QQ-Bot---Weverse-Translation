@@ -10,41 +10,45 @@ if not exist "run.py" goto missing_files
 
 set "VENV_PYTHON=.venv\Scripts\python.exe"
 if exist "%VENV_PYTHON%" goto check_existing_venv
+if exist ".venv" goto broken_venv
 
-set "PYTHON_CMD="
-py -3.13 -c "import sys; assert sys.version_info >= (3, 11) and sys.platform == 'win32'" >nul 2>&1
-if not errorlevel 1 set "PYTHON_CMD=py -3.13"
-if defined PYTHON_CMD goto create_venv
-py -3.12 -c "import sys; assert sys.version_info >= (3, 11) and sys.platform == 'win32'" >nul 2>&1
-if not errorlevel 1 set "PYTHON_CMD=py -3.12"
-if defined PYTHON_CMD goto create_venv
-py -3.11 -c "import sys; assert sys.version_info >= (3, 11) and sys.platform == 'win32'" >nul 2>&1
-if not errorlevel 1 set "PYTHON_CMD=py -3.11"
-if defined PYTHON_CMD goto create_venv
-py -3 -c "import sys; assert sys.version_info >= (3, 11) and sys.platform == 'win32'" >nul 2>&1
-if not errorlevel 1 set "PYTHON_CMD=py -3"
-if defined PYTHON_CMD goto create_venv
-python -c "import sys; assert sys.version_info >= (3, 11) and sys.platform == 'win32'" >nul 2>&1
-if not errorlevel 1 set "PYTHON_CMD=python"
-if not defined PYTHON_CMD goto missing_python
+rem Confirm that Python really ran, rather than trusting a launcher's exit code.
+set "QQBOT_PYTHON_PROBE=%TEMP%\qqbot-python-%RANDOM%-%RANDOM%.txt"
+set "PYTHON_EXE="
+call :probe_python py -3.14
+if defined PYTHON_EXE goto create_venv
+call :probe_python py -3.13
+if defined PYTHON_EXE goto create_venv
+call :probe_python py -3.12
+if defined PYTHON_EXE goto create_venv
+call :probe_python py -3.11
+if defined PYTHON_EXE goto create_venv
+call :probe_python py -3
+if defined PYTHON_EXE goto create_venv
+call :probe_python python
+if defined PYTHON_EXE goto create_venv
+goto missing_python
 
 :create_venv
-%PYTHON_CMD% -m venv ".venv"
-if errorlevel 1 goto install_error
+echo 已找到可用的 Python：
+"%PYTHON_EXE%" --version
+"%PYTHON_EXE%" -m venv ".venv"
+if not "%ERRORLEVEL%"=="0" goto install_error
+if not exist "%VENV_PYTHON%" goto install_error
 
 :check_existing_venv
 "%VENV_PYTHON%" -c "import sys; assert sys.version_info >= (3, 11) and sys.platform == 'win32'"
-if errorlevel 1 goto broken_venv
+if not "%ERRORLEVEL%"=="0" goto broken_venv
 
 rem Invalidate the readiness marker until every installation step succeeds.
 "%VENV_PYTHON%" -c "from pathlib import Path; Path('.venv/setup.sha256').unlink(missing_ok=True)"
-if errorlevel 1 goto install_error
+if not "%ERRORLEVEL%"=="0" goto install_error
 "%VENV_PYTHON%" -m pip install -r "requirements.txt"
-if errorlevel 1 goto install_error
+if not "%ERRORLEVEL%"=="0" goto install_error
 "%VENV_PYTHON%" -m playwright install chromium
-if errorlevel 1 goto install_error
+if not "%ERRORLEVEL%"=="0" goto install_error
 "%VENV_PYTHON%" -c "import hashlib; from pathlib import Path; Path('.venv/setup.sha256').write_text(hashlib.sha256(Path('requirements.txt').read_bytes()).hexdigest(), encoding='utf-8')"
-if errorlevel 1 goto install_error
+if not "%ERRORLEVEL%"=="0" goto install_error
 
 echo.
 echo 安装完成！请双击“启动工作台.bat”。
@@ -59,13 +63,13 @@ echo 请把这两个 bat 文件放在与 requirements.txt、run.py 同一层的�
 goto failed
 
 :missing_python
-echo 未找到 Windows Python 3.11 或更新版本，推荐安装官方 Python 3.13 64 位版。
+echo 未找到能运行的 Windows Python 3.11 或更新版本，Python 3.14 也符合版本要求。
 echo 下载地址：https://www.python.org/downloads/windows/
-echo 安装时勾选 Add python.exe to PATH，安装后重新双击本文件。
+echo 如果已经安装 Python，请保留当前版本，并运行 py -3.14 --version 和 python --version 检查。
 goto failed
 
 :broken_venv
-echo 现有 .venv 无法运行，或 Python 版本不符合要求。
+echo 现有 .venv 不完整、来自其他系统，或引用了不可用的 Python。
 echo 请关闭工作台，将 .venv 文件夹改名为 .venv-old 后重新运行本文件。
 echo data 文件夹保存设置与图片，请保留。
 goto failed
@@ -84,3 +88,14 @@ exit /b 1
 popd
 pause
 exit /b 1
+
+:probe_python
+set "PYTHON_EXE="
+if exist "%QQBOT_PYTHON_PROBE%" del /q "%QQBOT_PYTHON_PROBE%" >nul 2>&1
+%* -c "import os, sys; from pathlib import Path; assert sys.version_info >= (3, 11) and sys.platform == 'win32'; assert Path(sys.executable).is_file(); Path(os.environ['QQBOT_PYTHON_PROBE']).write_text(sys.executable, encoding='utf-8')" >nul 2>&1
+if not exist "%QQBOT_PYTHON_PROBE%" exit /b 0
+for /f "usebackq delims=" %%P in ("%QQBOT_PYTHON_PROBE%") do set "PYTHON_EXE=%%P"
+del /q "%QQBOT_PYTHON_PROBE%" >nul 2>&1
+if not defined PYTHON_EXE exit /b 0
+if not exist "%PYTHON_EXE%" set "PYTHON_EXE="
+exit /b 0
