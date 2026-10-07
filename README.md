@@ -6,6 +6,7 @@
 
 截图遮挡修正及旧项目更新步骤见 [截图修正说明](docs/capture-fix-validation.md)。
 原文 emoji 字体和防裁切修正见 [表情修正说明](docs/emoji-fix-validation.md)，整图分辨率与烤制版式暂未调整。
+Windows 遇到 `ensurepip` 失败或启动安装校验失败，见 [安装恢复说明](docs/windows-install-recovery.md)。
 后续讨论的动态分类、文字水印、翻译名称和模拟群聊需求记录在 [待更新清单](docs/next-version-requirements.md)，尚未进入程序。
 
 ## v2 群指令

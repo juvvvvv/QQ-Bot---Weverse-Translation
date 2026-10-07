@@ -8,8 +8,13 @@ set "VENV_PYTHON=.venv\Scripts\python.exe"
 if not exist "run.py" goto missing_files
 if not exist "requirements.txt" goto missing_files
 if not exist "%VENV_PYTHON%" goto needs_setup
-"%VENV_PYTHON%" -c "import sys, hashlib; from pathlib import Path; assert sys.version_info >= (3, 11) and sys.platform == 'win32'; marker=Path('.venv/setup.sha256'); assert marker.exists() and marker.read_text(encoding='utf-8') == hashlib.sha256(Path('requirements.txt').read_bytes()).hexdigest(); import fastapi, uvicorn, PIL, websockets, playwright, httpx, python_multipart"
-if errorlevel 1 goto needs_setup
+if not exist ".venv\setup.sha256" goto needs_setup
+"%VENV_PYTHON%" -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) and sys.platform == 'win32' else 1)"
+if errorlevel 1 goto broken_venv
+"%VENV_PYTHON%" -c "import sys, hashlib; from pathlib import Path; sys.exit(0 if Path('.venv/setup.sha256').read_text(encoding='utf-8') == hashlib.sha256(Path('requirements.txt').read_bytes()).hexdigest() else 1)"
+if errorlevel 1 goto changed_dependencies
+"%VENV_PYTHON%" -c "import fastapi, uvicorn, PIL, websockets, playwright, httpx, python_multipart"
+if errorlevel 1 goto missing_dependencies
 
 rem The old version checks DISPLAY to detect a desktop outside macOS.
 rem This process-local flag lets that check accept Windows; Chromium uses Windows normally.
@@ -42,7 +47,22 @@ echo 请先完整解压原版项目，再将两个 bat 文件放在与 run.py、
 goto failed
 
 :needs_setup
-echo 请先双击“首次安装.bat”，完成 Windows 依赖安装或更新后再启动。
+echo 当前项目目录尚未完成安装，请先双击“首次安装.bat”。
+echo 如果这是新下载的更新包，可回到原来能启动的项目，只替换 weverse_bot 文件夹。
+echo 保留原项目的 .venv 和 data，不用为本次 emoji 更新重新安装。
+goto failed
+
+:broken_venv
+echo 当前 .venv 的 Python 无法正常运行，请先运行“首次安装.bat”检查。
+echo data 保存设置与图片，请保留。
+goto failed
+
+:changed_dependencies
+echo 依赖清单已变化，请双击“首次安装.bat”更新依赖后再启动。
+goto failed
+
+:missing_dependencies
+echo 依赖缺失或导入失败，请保留上方具体报错，并双击“首次安装.bat”修复。
 goto failed
 
 :port_busy

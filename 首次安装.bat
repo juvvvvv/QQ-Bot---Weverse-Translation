@@ -32,7 +32,8 @@ goto missing_python
 :create_venv
 echo 已找到可用的 Python：
 "%PYTHON_EXE%" --version
-"%PYTHON_EXE%" -m venv ".venv"
+rem Run pip bootstrapping separately so its actual error is visible.
+"%PYTHON_EXE%" -m venv --without-pip ".venv"
 if not "%ERRORLEVEL%"=="0" goto install_error
 if not exist "%VENV_PYTHON%" goto install_error
 
@@ -43,6 +44,21 @@ if not "%ERRORLEVEL%"=="0" goto broken_venv
 rem Invalidate the readiness marker until every installation step succeeds.
 "%VENV_PYTHON%" -c "from pathlib import Path; Path('.venv/setup.sha256').unlink(missing_ok=True)"
 if not "%ERRORLEVEL%"=="0" goto install_error
+
+rem A failed earlier venv creation may have left Python but no pip.
+"%VENV_PYTHON%" -m pip --version >nul 2>&1
+if errorlevel 1 goto repair_pip
+goto install_dependencies
+
+:repair_pip
+echo 正在初始化 pip，使用 Python 自带的安装包，此步骤不需要联网。
+"%VENV_PYTHON%" -m ensurepip --upgrade --default-pip
+if not "%ERRORLEVEL%"=="0" goto pip_error
+"%VENV_PYTHON%" -m pip --version
+if not "%ERRORLEVEL%"=="0" goto pip_error
+
+:install_dependencies
+echo 正在安装工作台依赖。
 "%VENV_PYTHON%" -m pip install -r "requirements.txt"
 if not "%ERRORLEVEL%"=="0" goto install_error
 "%VENV_PYTHON%" -m playwright install chromium
@@ -77,6 +93,14 @@ goto failed
 :install_error
 echo.
 echo 安装没有完成。请保留以上完整报错，检查网络与 Python 安装。
+goto failed
+
+:pip_error
+echo.
+echo Python 虚拟环境已创建，但 pip 初始化失败；上方是具体错误。
+echo 这一步使用 Python 自带的文件，不是下载工作台依赖失败。
+echo 请保留从“正在初始化 pip”开始的完整报错，再进一步排查。
+echo 请勿删除 data 文件夹；旧项目能正常启动时，可在旧项目中只替换 weverse_bot 文件夹。
 goto failed
 
 :directory_error

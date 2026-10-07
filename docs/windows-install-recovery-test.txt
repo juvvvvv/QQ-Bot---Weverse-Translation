@@ -1,0 +1,20 @@
+Create isolated environment without pip
+exit=0
+Confirm incomplete environment has no pip
+/tmp/qqbot-pip-recovery-au6fg9h3/project with spaces 中文/.venv/bin/python: No module named pip
+exit=1
+Bootstrap bundled pip with visible error output
+Looking in links: /tmp/tmpuesrob9h
+Processing /tmp/tmpuesrob9h/pip-25.0.1-py3-none-any.whl
+Installing collected packages: pip
+Successfully installed pip-25.0.1
+exit=0
+Confirm pip is usable after recovery
+pip 25.0.1 from /tmp/qqbot-pip-recovery-au6fg9h3/project with spaces 中文/.venv/lib/python3.12/site-packages/pip (python 3.12)
+exit=0
+Confirm rerunning bundled bootstrap is safe
+Looking in links: /tmp/tmpesll6kl7
+Requirement already satisfied: pip in /tmp/qqbot-pip-recovery-au6fg9h3/project with spaces 中文/.venv/lib/python3.12/site-packages (25.0.1)
+exit=0
+PASS: offline pip recovery on Linux / Python 3.12.14
+Not run: Windows cmd.exe and Python 3.14; these need local verification.
