@@ -10,7 +10,7 @@ from pathlib import Path
 
 TEST_DATA = tempfile.TemporaryDirectory(prefix='plave-tests-')
 os.environ['WEVERSE_DATA_DIR'] = TEST_DATA.name
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageChops
 from fastapi.testclient import TestClient
 from weverse_bot import store
 from weverse_bot.app import app
@@ -51,14 +51,48 @@ class ImageTests(unittest.TestCase):
         original, filename = source_image()
         slots = [{'key':'0','label':'正文','y':55},{'key':'1','label':'艺人评论 1','y':120}]
         text = {'0':'这是中文翻译。\n第二行。','1':'很长的评论翻译' * 50}
-        output = compose(store.DATA / filename, slots, text, '翻译组水印')
+        output = compose(store.DATA / filename, slots, text, '')
         h1 = band(original.width, '中文翻译 · 正文', text['0'], 24).height
         h2 = band(original.width, '中文翻译 · 艺人评论 1', text['1'], 24).height
         self.assertEqual(output.crop((0,0,320,55)).tobytes(), original.crop((0,0,320,55)).tobytes())
         self.assertEqual(output.crop((0,55+h1,320,120+h1)).tobytes(), original.crop((0,55,320,120)).tobytes())
         self.assertEqual(output.crop((0,120+h1+h2,320,150+h1+h2)).tobytes(), original.crop((0,120,320,150)).tobytes())
         self.assertGreater(output.height, original.height)
+        self.assertEqual(output.height, original.height + h1 + h2)
         self.assertEqual(Image.open(store.DATA / filename).tobytes(), original.tobytes())
+
+    def test_plain_translation_has_white_background_and_complete_color_emoji(self):
+        image = band(420, '不应显示在图片中的标题', '漂亮的一天🙂', 14)
+        ink = ImageOps.invert(image).getbbox()
+        self.assertIsNotNone(ink)
+        self.assertGreater(ink[1], 0)
+        self.assertLess(ink[3], image.height)
+        self.assertGreaterEqual(ink[0], 16)
+        self.assertLess(image.height, 50)
+        self.assertEqual(image.getpixel((0, 0)), (255, 255, 255))
+        self.assertEqual(image.getpixel((419, image.height - 1)), (255, 255, 255))
+        self.assertTrue(any(r > 180 and g > 100 and b < 120 for r, g, b in image.getdata()))
+
+    def test_long_translation_and_blank_lines_expand_height(self):
+        short = band(240, '', '漂亮的一天🙂', 20)
+        spaced = band(240, '', '漂亮的一天🙂\n\n第二段', 20)
+        long = band(240, '', '很长的中文译文🙂' * 50, 20)
+        self.assertGreater(spaced.height, short.height * 2)
+        self.assertGreater(long.height, spaced.height)
+        self.assertEqual(long.width, short.width)
+
+    def test_text_watermark_is_faint_centered_and_adds_no_footer(self):
+        _, filename = source_image()
+        slots = [{'key': '0', 'label': '正文', 'y': 150}]
+        base = compose(store.DATA / filename, slots, {'0': '漂亮的一天🙂'}, '')
+        marked = compose(store.DATA / filename, slots, {'0': '漂亮的一天🙂'}, '@Plave_PixelDiary 翻译：测试')
+        self.assertEqual(marked.size, base.size)
+        difference = ImageChops.difference(marked, base)
+        box = difference.getbbox()
+        self.assertIsNotNone(box)
+        self.assertGreater(box[1], marked.height / 2 - 40)
+        self.assertLess(box[3], marked.height / 2 + 40)
+        self.assertLessEqual(max(channel for pixel in difference.getdata() for channel in pixel), 51)
 
     def test_partial_completed_and_history_reuse(self):
         p = create_post(fingerprints=True)
@@ -437,6 +471,33 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(slot['y'], media_after['y'] - card_after['y'] + 1)
         with Image.open(store.DATA / post['original']) as image:
             self.assertEqual(image.width, round(card_before['width']))
+
+    async def test_translation_aligns_with_original_and_preserves_entire_photo(self):
+        store.save_settings({'watermark': ''})
+        await self.page.set_content('''<style>
+        body{margin:0}.post{width:420px;background:white;box-sizing:border-box;padding:16px}
+        .artist{height:40px}.text{margin:16px 0;font-size:14px;white-space:pre-wrap}
+        .media{height:400px;background:rgb(160,20,80)}
+        </style><article class="post"><div class="artist">YEJUN</div>
+        <p class="text">예쁜하루☺️</p><div class="media"></div></article>''')
+        cfg = self.cfg | {'comment_selector': ''}
+        post = await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',cfg)
+        slot = post['slots'][0]
+        self.assertEqual(slot['x'], 16)
+        self.assertEqual(slot['width'], 388)
+        self.assertEqual(slot['font_size'], 14)
+        translated = await asyncio.to_thread(render_post, post['id'], {'0': '漂亮的一天🙂'})
+        with Image.open(store.DATA / post['original']) as original, Image.open(store.DATA / translated['output']) as result:
+            added = result.height - original.height
+            self.assertGreater(added, 0)
+            self.assertEqual(result.width, original.width)
+            self.assertEqual(result.crop((0, 0, 420, slot['y'])).tobytes(),
+                             original.crop((0, 0, 420, slot['y'])).tobytes())
+            self.assertEqual(result.crop((0, slot['y'] + added, 420, result.height)).tobytes(),
+                             original.crop((0, slot['y'], 420, original.height)).tobytes())
+            inserted = result.crop((0, slot['y'], 420, slot['y'] + added))
+            self.assertGreaterEqual(ImageOps.invert(inserted).getbbox()[0], 16)
+            self.assertEqual(translated['translations']['0'], '漂亮的一天🙂')
 
     async def test_consent_and_site_chrome_do_not_cover_author_or_media(self):
         avatar = io.BytesIO()

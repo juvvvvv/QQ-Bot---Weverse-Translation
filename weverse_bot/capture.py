@@ -201,7 +201,9 @@ class Browser:
             await reject_optional_consent(page)
             boxes = await card.evaluate('''(el, selector) => {
                 const a=el.getBoundingClientRect(), b=el.querySelector(selector).getBoundingClientRect();
-                return {w:a.width,h:a.height,y:b.bottom-a.top};
+                const style=getComputedStyle(el.querySelector(selector));
+                return {w:a.width,h:a.height,y:b.bottom-a.top,x:b.left-a.left,
+                        text_width:b.width,font_size:parseFloat(style.fontSize)};
             }''', text_selector)
             if boxes['h'] > 30000 or boxes['w'] * boxes['h'] > 24_000_000:
                 raise ValueError('帖子太长，请分批截图。')
@@ -210,8 +212,11 @@ class Browser:
             if boxes['y'] < 0 or boxes['y'] > boxes['h']:
                 raise ValueError('原文位置不在卡片范围内，请重新校准。')
             y = offset + round(boxes['y'] * image.height / boxes['h'])
+            scale = image.width / boxes['w']
             fingerprint = hashlib.sha256(f'{url}\n{label == "正文"}\n{author}\n{text}'.encode()).hexdigest()
             slots.append({'key': str(index), 'label': label, 'y': y, 'text': text,
+                          'x': round(boxes['x'] * scale), 'width': round(boxes['text_width'] * scale),
+                          'font_size': boxes['font_size'] * scale,
                           'fingerprint': fingerprint, 'author': author,
                           'reusable': bool(store.memory(fingerprint, group))})
             fragments.append(image)

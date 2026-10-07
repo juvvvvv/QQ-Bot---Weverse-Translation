@@ -45,13 +45,13 @@ class V2Tests(unittest.TestCase):
         logo=Image.new('RGBA',(80,40),(255,0,0,128));buf=io.BytesIO();logo.save(buf,format='PNG')
         upload_logo(buf.getvalue(),'123456')
         slots=[{'key':'0','label':'正文','y':150}]
-        result=compose(store.DATA/filename,slots,{'0':'中文译文'},'水印',logo_config=store.watermark('123456'))
+        result=compose(store.DATA/filename,slots,{'0':'中文译文'},'',logo_config=store.watermark('123456'))
         self.assertEqual(result.crop((0,0,320,150)).tobytes(),source.tobytes())
         store.save_watermark('123456',{'position':'top-right','opacity':0})
-        transparent=compose(store.DATA/filename,slots,{'0':'中文译文'},'水印',logo_config=store.watermark('123456'))
+        transparent=compose(store.DATA/filename,slots,{'0':'中文译文'},'',logo_config=store.watermark('123456'))
         self.assertEqual(transparent.crop((0,0,320,150)).tobytes(),source.tobytes())
         store.save_watermark('123456',{'opacity':100})
-        visible=compose(store.DATA/filename,slots,{'0':'中文译文'},'水印',logo_config=store.watermark('123456'))
+        visible=compose(store.DATA/filename,slots,{'0':'中文译文'},'',logo_config=store.watermark('123456'))
         self.assertNotEqual(visible.crop((0,0,320,150)).tobytes(),source.tobytes())
 
     def test_png_validation_and_replacement(self):
