@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 from PIL import Image
 from playwright.async_api import async_playwright
 from . import store
+from .page_cleanup import reject_optional_consent, remove_site_chrome, ensure_author_visible
 
 
 def weverse_url(raw, feed=False):
@@ -74,6 +75,7 @@ class Browser:
         try:
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
             await page.wait_for_timeout(2000)
+            await reject_optional_consent(page, wait_ms=2000)
             return page
         except Exception:
             await page.close()
@@ -102,6 +104,7 @@ class Browser:
 
     async def extract(self, page, url, group, cfg):
         """Capture only explicitly matched artist cards. Never guess badge classes."""
+        await reject_optional_consent(page)
         root = page.locator(cfg['post_selector'])
         try:
             await root.first.wait_for(state='visible', timeout=15000)
@@ -114,6 +117,7 @@ class Browser:
             raise ValueError('帖子选择器必须只匹配一个帖子卡片。请缩小选择器范围。')
         if not await root.locator(cfg['artist_selector']).count():
             raise ValueError('未找到艺人标识，停止抓取。请确认这是 From PLAVE 艺人帖子，并校准标识选择器。')
+        await remove_site_chrome(page)
         if cfg['expand_selector']:
             # Only explicit expand controls inside the post/comment cards, no sitewide buttons.
             scopes = [root]
@@ -180,6 +184,7 @@ class Browser:
             author_node = card.locator(cfg['author_selector'])
             if await author_node.count() != 1:
                 raise ValueError(f'{label}作者选择器必须匹配一个作者姓名或身份元素。')
+            await ensure_author_visible(card, author_node)
             author = (await author_node.get_attribute('data-member-id') or
                       await author_node.get_attribute('data-author-id') or
                       await author_node.inner_text()).strip()
@@ -187,6 +192,9 @@ class Browser:
                 raise ValueError(f'{label}无法读取作者身份，停止历史匹配。请校准作者选择器。')
             if not text:
                 raise ValueError(f'{label}没有可插入译文的正文，请手动截图指定位置。')
+            # Consent can also appear late, after media/fonts finish loading.
+            # Dismiss it before measuring the final screenshot/translation coordinates.
+            await reject_optional_consent(page)
             boxes = await card.evaluate('''(el, selector) => {
                 const a=el.getBoundingClientRect(), b=el.querySelector(selector).getBoundingClientRect();
                 return {w:a.width,h:a.height,y:b.bottom-a.top};
@@ -218,7 +226,7 @@ class Browser:
         note = '仅记录本次页面中已加载、匹配艺人标识的卡片；不保证未加载或折叠的评论完整。'
         if not reached_end:
             note += '已达到滚动上限，请检查是否还有未加载内容。'
-        self.login_state = '已成功读取艺人帖子；会话当前可用（不代表所有付费内容可访问）'
+        self.login_state = '已成功读取当前艺人动态（不代表已登录或可读取需账号权限的内容）'
         self.last_error = ''
         return store.add_post(url, slots[0]['text'][:60],
                               group, name, slots, 'weverse', note)

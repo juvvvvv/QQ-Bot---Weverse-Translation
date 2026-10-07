@@ -16,6 +16,7 @@ from weverse_bot import store
 from weverse_bot.app import app
 from weverse_bot.render import compose, band, render_post
 from weverse_bot.capture import Browser, weverse_url
+from weverse_bot.page_cleanup import reject_optional_consent
 from weverse_bot.qq import QQClient
 import websockets
 
@@ -377,6 +378,118 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         await self.page.locator('.post .text').evaluate("el=>{el.style.height='10px';el.style.overflow='hidden'}")
         with self.assertRaisesRegex(ValueError,'截断'):
             await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',self.cfg)
+
+    async def test_consent_and_site_chrome_do_not_cover_author_or_media(self):
+        avatar = io.BytesIO()
+        Image.new('RGB',(32,32),(255,165,0)).save(avatar,format='PNG')
+        image = 'data:image/png;base64,'+base64.b64encode(avatar.getvalue()).decode()
+        await self.page.set_content('''<style>
+        body{margin:0}.post{width:620px;padding:12px;background:white;box-sizing:border-box}
+        .community-artist-postId-_-header{display:none;height:48px}
+        img{width:32px;height:32px;vertical-align:top}.artist{display:inline-block}
+        .text{margin:16px 0}.media{height:1200px;background:rgb(235,235,235)}
+        .global-_-header{position:fixed;top:0;width:100%;height:100px;background:magenta;z-index:30}
+        .login-required-bottom-layer-_-login_required_wrap{position:fixed;bottom:0;width:100%;height:100px;background:red;z-index:30}
+        #consent{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.7)}
+        </style><nav class="global-_-header">Weverse PLAVE 菜单</nav>
+        <article class="post"><div class="community-artist-postId-_-header">
+        <span class="avatar-decorator-_-image"><img src="'''+image+'''"></span>
+        <span class="artist avatar-decorator-_-title">YEJUN</span></div>
+        <p class="text">예쁜하루☺️</p><div class="media"></div><p>发布时间</p></article>
+        <div class="login-required-bottom-layer-_-login_required_wrap">登录后查看</div>
+        <div id="consent" role="dialog"><p>Weverse asks for your consent to use your personal data</p>
+        <button onclick="window.choice='reject';document.getElementById('consent').remove()">Do not consent</button>
+        <button onclick="window.choice='accept'">Consent</button></div>''')
+        cfg=self.cfg|{'comment_selector':'','author_selector':'.avatar-decorator-_-title'}
+        post=await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',cfg)
+        self.assertEqual(await self.page.evaluate('window.choice'),'reject')
+        self.assertEqual(post['slots'][0]['author'],'YEJUN')
+        self.assertEqual(post['slots'][0]['text'],'예쁜하루☺️')
+        self.assertTrue(await self.page.locator('.avatar-decorator-_-title').is_visible())
+        self.assertFalse(await self.page.locator('.global-_-header').is_visible())
+        self.assertFalse(await self.page.locator('.login-required-bottom-layer-_-login_required_wrap').is_visible())
+        im=Image.open(store.DATA/post['original']).convert('RGB')
+        self.assertGreater(im.height,1000)
+        self.assertEqual(im.getpixel((16,16)),(255,165,0))
+        colors={color for _,color in im.getcolors(maxcolors=im.width*im.height)}
+        self.assertNotIn((255,0,255),colors)
+        self.assertNotIn((255,0,0),colors)
+
+    async def test_consent_in_iframe_is_rejected_even_when_frame_closes(self):
+        await self.page.set_content('<iframe id="cmp"></iframe>')
+        frame=await (await self.page.locator('#cmp').element_handle()).content_frame()
+        await frame.set_content('''<p>Weverse asks for your consent</p>
+        <button onclick="parent.choice='reject';frameElement.remove()">Do not consent</button>
+        <button onclick="parent.choice='accept'">Consent</button>''')
+        await reject_optional_consent(self.page)
+        self.assertEqual(await self.page.evaluate('window.choice'),'reject')
+        self.assertEqual(await self.page.locator('#cmp').count(),0)
+
+    async def test_consent_without_rejection_is_not_accepted_or_hidden(self):
+        await self.page.set_content(FIXTURE+'''<div id="consent" role="dialog">
+        <p>Weverse asks for your consent</p><button onclick="window.choice='accept'">Consent</button></div>''')
+        with self.assertRaisesRegex(ValueError,'未找到明确的拒绝按钮'):
+            await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',self.cfg)
+        self.assertIsNone(await self.page.evaluate('window.choice'))
+        self.assertTrue(await self.page.locator('#consent').is_visible())
+        self.assertEqual(store.posts(),[])
+
+    async def test_delayed_consent_is_rejected(self):
+        await self.page.evaluate('''() => setTimeout(() => {
+            const dialog=document.createElement('div');
+            dialog.innerHTML='<p>Weverse asks for your consent</p><button>Do not consent</button>';
+            dialog.querySelector('button').onclick=()=>{window.choice='reject';dialog.remove()};
+            document.body.appendChild(dialog);
+        }, 100)''')
+        await reject_optional_consent(self.page,wait_ms=800)
+        self.assertEqual(await self.page.evaluate('window.choice'),'reject')
+
+    async def test_rejection_does_not_allow_a_remaining_backdrop(self):
+        await self.page.set_content('''<div id="backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,.7)">
+        <p>Weverse asks for your consent</p>
+        <button onclick="window.choice='reject';this.previousElementSibling.remove();this.remove()">Do not consent</button>
+        </div>''')
+        with self.assertRaisesRegex(ValueError,'关闭弹窗失败'):
+            await reject_optional_consent(self.page)
+        self.assertEqual(await self.page.evaluate('window.choice'),'reject')
+        self.assertTrue(await self.page.locator('#backdrop').is_visible())
+
+    async def test_hidden_author_is_not_saved_as_an_incomplete_screenshot(self):
+        await self.page.locator('.post .artist').evaluate("el=>el.style.visibility='hidden'")
+        with self.assertRaisesRegex(ValueError,'作者名称.*不可见'):
+            await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',self.cfg)
+        self.assertEqual(store.posts(),[])
+
+    async def test_missing_avatar_is_not_saved_as_an_incomplete_screenshot(self):
+        await self.page.locator('.post .artist').evaluate('''el => {
+            const header=document.createElement('div');
+            header.className='community-artist-postId-_-header';
+            el.before(header);header.appendChild(el);
+        }''')
+        with self.assertRaisesRegex(ValueError,'发帖者头像.*不可见'):
+            await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',self.cfg)
+        self.assertEqual(store.posts(),[])
+
+    async def test_consent_preference_survives_persistent_browser_restart(self):
+        fixture='''<script>
+        if(!document.cookie.includes('optional_consent=denied')){
+            document.write('<div id="consent"><p>Weverse asks for your consent</p><button>Do not consent</button></div>');
+            document.querySelector('button').onclick=()=>{
+                document.cookie='optional_consent=denied; Path=/; Max-Age=86400';
+                document.querySelector('#consent').remove();
+            };
+        }</script>'''
+        url='https://weverse.io/plave/artist/1234'
+        await self.page.route(url,lambda route:route.fulfill(body=fixture,content_type='text/html'))
+        await self.page.goto(url)
+        await reject_optional_consent(self.page)
+        self.assertIn('optional_consent=denied',await self.page.evaluate('document.cookie'))
+        await self.browser.close()
+        context=await self.browser.open()
+        self.page=await context.new_page()
+        await self.page.route(url,lambda route:route.fulfill(body=fixture,content_type='text/html'))
+        await self.page.goto(url)
+        self.assertEqual(await self.page.locator('#consent').count(),0)
 
 
 class MonitorTests(unittest.IsolatedAsyncioTestCase):
