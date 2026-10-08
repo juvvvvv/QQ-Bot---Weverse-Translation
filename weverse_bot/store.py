@@ -26,7 +26,7 @@ DEFAULTS = {
     'artist_comment_count_selector': '.base-comment-artist-count-and-toggle-_-count',
     'capture_artist_comments': True,
     'feed_link_selector': '', 'monitor_enabled': False, 'poll_seconds': 300,
-    'max_scrolls': 8, 'monitor_paused_groups': [],
+    'max_scrolls': 8, 'comment_wait_seconds': 30, 'monitor_paused_groups': [],
 }
 
 

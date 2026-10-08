@@ -7,6 +7,11 @@ REJECT_NAMES = re.compile(
     r'^(?:Do not consent|Reject all|Deny all|不同意|全部拒绝|拒绝全部|'
     r'Nicht zustimmen|Alle ablehnen)\s*$', re.I,
 )
+COOKIE_REJECT_NAMES = re.compile(
+    r'^(?:不同意并继续|Disagree and continue|Continue without agreeing|'
+    r'Continue without consent|Ablehnen und fortfahren|拒否して続行|동의하지 않고 계속)\s*$', re.I,
+)
+COOKIE_LAYER = '[class*="_w_bottom_fixed_"]'
 CONSENT_TITLE = re.compile(
     r'Weverse\s+asks for your consent|Weverse\s+bittet um Ihre Zustimmung|'
     r'Weverse.{0,20}请求您同意|Weverse.{0,20}征求您的同意', re.I,
@@ -27,6 +32,11 @@ async def _consent_visible(page):
     for frame in page.frames:
         if frame.is_detached():
             continue
+        cookie_layers = frame.locator(COOKIE_LAYER).filter(
+            has=frame.locator('a[href*="/policies/cookie"]'))
+        for index in range(min(await cookie_layers.count(), 5)):
+            if await cookie_layers.nth(index).is_visible():
+                return True
         notices = frame.get_by_text(CONSENT_TITLE)
         for index in range(min(await notices.count(), 5)):
             if await notices.nth(index).is_visible():
@@ -41,51 +51,67 @@ async def reject_optional_consent(page, wait_ms=0):
     clicked. Chromium's persistent profile stores the site's resulting preference.
     """
     deadline = time.monotonic() + wait_ms / 1000
+    rejected = False
+    dismissals = 0
     while True:
+        clicked = False
+        candidates, cookie_candidates = [], []
         for frame in page.frames:
             if frame.is_detached():
                 continue
             buttons = frame.get_by_role('button', name=REJECT_NAMES)
-            for index in range(min(await buttons.count(), 5)):
-                button = buttons.nth(index)
-                if not await button.is_visible():
-                    continue
-                layer_handle = await button.evaluate_handle('''el => {
-                    let layer=el.closest('[role="dialog"], dialog, [aria-modal="true"]');
-                    for(let n=el.parentElement;n && n!==document.body;n=n.parentElement) {
-                        if(getComputedStyle(n).position==='fixed') layer=n;
-                    }
-                    return layer;
-                }''')
-                layer = layer_handle.as_element()
-                try:
-                    await button.click(timeout=3000)
-                    if not frame.is_detached():
-                        await button.wait_for(state='hidden', timeout=5000)
-                        if layer:
-                            await layer.wait_for_element_state('hidden', timeout=5000)
-                except Exception as exc:
-                    if not frame.is_detached():
-                        raise ValueError(
-                            '自动选择 Do not consent 或关闭弹窗失败，已停止截图。'
-                            '请在工作台打开的浏览器中手动拒绝同意后重试。'
-                        ) from exc
-                finally:
-                    await layer_handle.dispose()
-                # Wait for the backdrop/fade-out after the rejection button closes.
-                for _ in range(20):
-                    if not await _consent_visible(page):
-                        await page.wait_for_timeout(150)
-                        return True
-                    await page.wait_for_timeout(100)
-                raise ValueError('拒绝同意后弹窗仍未关闭，已停止截图，请检查工作台浏览器。')
+            cookie_layers = frame.locator(COOKIE_LAYER).filter(
+                has=frame.locator('a[href*="/policies/cookie"]'))
+            cookie_buttons = cookie_layers.get_by_role('button', name=COOKIE_REJECT_NAMES)
+            candidates.extend((frame, buttons.nth(i)) for i in range(min(await buttons.count(), 5)))
+            cookie_candidates.extend((frame, cookie_buttons.nth(i)) for i in range(min(await cookie_buttons.count(), 5)))
+        # Search all frames for the central CMP first: an iframe can cover a
+        # Cookie bar in the main document regardless of its DOM order.
+        candidates.extend(cookie_candidates)
+        for frame, button in candidates:
+            if frame.is_detached():
+                continue
+            if not await button.is_visible():
+                continue
+            layer_handle = await button.evaluate_handle('''el => {
+                let layer=el.closest('[role="dialog"], dialog, [aria-modal="true"], [class*="_w_bottom_fixed_"]');
+                for(let n=el.parentElement;n && n!==document.body;n=n.parentElement) {
+                    if(getComputedStyle(n).position==='fixed') layer=n;
+                }
+                return layer;
+            }''')
+            layer = layer_handle.as_element()
+            try:
+                await button.click(timeout=3000)
+                if not frame.is_detached():
+                    await button.wait_for(state='hidden', timeout=5000)
+                    if layer:
+                        await layer.wait_for_element_state('hidden', timeout=5000)
+            except Exception as exc:
+                if not frame.is_detached():
+                    raise ValueError(
+                        '自动选择 Do not consent 或关闭弹窗失败，已停止截图。'
+                        '请在工作台打开的浏览器中手动拒绝同意后重试。'
+                    ) from exc
+            finally:
+                await layer_handle.dispose()
+            rejected = clicked = True
+            dismissals += 1
+            break
+        if clicked:
+            if dismissals >= 10:
+                raise ValueError('隐私提示反复出现，已停止截图，请检查工作台浏览器。')
+            await page.wait_for_timeout(150)
+            # A CMP dialog and the Cookie bar can coexist. Re-scan the DOM after
+            # each explicit rejection, including frames that remain attached.
+            continue
         if time.monotonic() >= deadline:
             if await _consent_visible(page):
                 raise ValueError(
                     '检测到隐私同意弹窗，但未找到明确的拒绝按钮，已停止截图。'
                     '请提供该弹窗拒绝按钮的 outerHTML，或先在工作台浏览器中手动选择。'
                 )
-            return False
+            return rejected
         await page.wait_for_timeout(150)
 
 

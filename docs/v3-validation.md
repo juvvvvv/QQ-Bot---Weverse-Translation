@@ -1,4 +1,6 @@
-# v3 评论译制试用版：更新和测试
+# v3 preview1 历史验证记录
+
+最新 Windows 修正请看 [preview2-validation.md](preview2-validation.md)。以下为上次交付时的记录。
 
 这一轮实现艺人评论捕获和排序、楼中楼样式、统一译文输入、`+` 分段、`/e` 逐段表情引用、补充新评论、最新成功版本覆盖，以及最后一步底部文字水印。Mac 使用 Python 3.13，Windows 使用 Python 3.14，源代码一致。
 

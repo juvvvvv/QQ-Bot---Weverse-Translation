@@ -202,7 +202,7 @@ async def update_settings(body: SettingsUpdate):
         raise ValueError('OneBot 地址需为 ws:// 或 wss://，令牌请填在独立令牌框。')
     if ws.scheme == 'ws' and ws.hostname not in ('localhost', '127.0.0.1', '::1'):
         raise ValueError('明文 WebSocket 只允许本机地址；远程 OneBot 请使用 wss://。')
-    for key, low, high in [('font_size', 12, 48), ('capture_width', 480, 1600), ('poll_seconds', 60, 86400), ('max_scrolls', 1, 30)]:
+    for key, low, high in [('font_size', 12, 48), ('capture_width', 480, 1600), ('poll_seconds', 60, 86400), ('max_scrolls', 1, 30), ('comment_wait_seconds', 5, 120)]:
         if type(cfg[key]) is not int or not low <= cfg[key] <= high:
             raise ValueError(f'{key} 需要在 {low}–{high} 范围内。')
     if type(cfg['capture_scale']) is not int or cfg['capture_scale'] not in (1, 2, 3):

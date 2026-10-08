@@ -22,9 +22,7 @@ def parse_count(text):
 async def read_comment_counts(page, cfg):
     result = {'artist': None, 'captured_at': time.time(), 'warnings': []}
     for key, field in (('artist', 'artist_comment_count_selector'),):
-        selector = cfg.get(field, '')
-        if not selector:
-            continue
+        selector = cfg.get(field) or '.base-comment-artist-count-and-toggle-_-count'
         try:
             nodes = page.locator(selector)
             all_nodes = [nodes.nth(i) for i in range(min(await nodes.count(), 20))]

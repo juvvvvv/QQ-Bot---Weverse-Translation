@@ -1,5 +1,8 @@
 """Capture the artist-only list, keeping comment identity separate from order."""
-import re
+import json
+import math
+import time
+from datetime import datetime, timezone
 
 LIST = '.comment-list-by-artists-_-comment_list'
 CARD = '.comment-item-_-container'
@@ -10,11 +13,21 @@ BADGE = 'svg g[id="24/em/ic_officialbadge_special_medium"]'
 TOGGLE = '.base-comment-artist-count-and-toggle-_-toggle_button'
 
 
-def time_key(value, index):
-    match = re.search(r'(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{1,2}):(\d{2})', value)
-    if match:
-        return (*map(int, match.groups()), -index)
-    return (99, 99, 99, 99, -index)
+def machine_time(value):
+    """Read an explicit machine date; localized display text is never a date key."""
+    if value is None or value == '':
+        return None
+    try:
+        result = float(value)
+        if result > 100_000_000_000:
+            result /= 1000  # Unix milliseconds.
+        return result if math.isfinite(result) else None
+    except (TypeError, ValueError):
+        try:
+            result = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+            return result.replace(tzinfo=result.tzinfo or timezone.utc).timestamp()
+        except ValueError:
+            return None
 
 
 def order_comments(records):
@@ -36,7 +49,14 @@ def order_comments(records):
             children.setdefault(parent, []).append(record)
         else:
             roots.append(record)
-    key = lambda r: time_key(r.get('published', ''), r['source_index'])
+    # The supplied Weverse list is newest first, including same-minute replies.
+    # Use one consistent ordering for the whole snapshot. Never mix parsed dates
+    # with unrecognized localized strings, or infer chronology from comment IDs.
+    timestamps = {r['comment_id']: machine_time(r.get('timestamp')) for r in records}
+    if records and all(value is not None for value in timestamps.values()):
+        key = lambda r: (timestamps[r['comment_id']], -r['source_index'])
+    else:
+        key = lambda r: -r['source_index']
     result = []
     def visit(record, depth):
         record['depth'] = max(depth, 1 if record['is_reply'] else 0)
@@ -50,74 +70,121 @@ def order_comments(records):
 
 
 async def collect_artist_comments(page, cfg, api_parents=None):
+    """Wait for the artist region, not a fixed sleep or one empty DOM lookup."""
     from .capture_layout import read_comment_counts
-    count = (await read_comment_counts(page, cfg))['artist']
-    if count and count['value'] == 0:
-        return []
-    containers = page.locator(LIST)
-    buttons = page.locator(TOGGLE)
-    for i in range(min(await buttons.count(), 5)):
-        button = buttons.nth(i)
-        if await button.is_visible() and await button.get_attribute('aria-expanded') == 'false':
-            await button.click(timeout=5000)
-            try:
-                await containers.first.wait_for(state='visible', timeout=10000)
-            except Exception as exc:
-                raise ValueError('艺人评论已点击展开，但列表未加载，请检查网络后重试。') from exc
-    if not await containers.count():
-        return []
-    visible = [containers.nth(i) for i in range(await containers.count()) if await containers.nth(i).is_visible()]
-    if len(visible) != 1:
-        raise ValueError('艺人评论列表未展开，或匹配到多个列表，请检查页面。')
-    listing = visible[0]
-    # Scroll the actual list/scrolling ancestor, not just the document.
-    # The final artist count check rejects incomplete virtual/lazy lists.
-    for _ in range(cfg['max_scrolls']):
-        cards = listing.locator(':scope > ' + CARD)
-        before = await cards.count()
-        if before:
-            await cards.last.scroll_into_view_if_needed()
-        await listing.evaluate('''el => {
-            for(let n=el;n;n=n.parentElement) {
-                if(n.scrollHeight>n.clientHeight+4 && /auto|scroll/.test(getComputedStyle(n).overflowY)) {
-                    n.scrollTop=n.scrollHeight; return;
+    from .page_cleanup import reject_optional_consent
+    deadline = time.monotonic() + cfg.get('comment_wait_seconds', 30)
+    listing = None
+    raw = []
+    expected = None
+    clicked = False
+    stable_key = None
+    stable_since = 0
+    last_scroll = 0
+    scrolls = 0
+    problem = ''
+    while True:
+        await reject_optional_consent(page)
+        counts = await read_comment_counts(page, cfg)
+        count = counts['artist']
+        expected = count['value'] if count else None
+        if expected is not None and expected > 200:
+            raise ValueError('艺人评论超过单张图片的 200 条上限，请分批处理。')
+        containers = page.locator(LIST)
+        visible = [containers.nth(i) for i in range(await containers.count())
+                   if await containers.nth(i).is_visible()]
+        if len(visible) > 1:
+            raise ValueError('匹配到多个可见艺人评论列表，请检查页面。')
+        listing = visible[0] if visible else None
+        # Preserve explicitly configured legacy adapters. The default native
+        # path must never interpret a missing list/counter as zero comments.
+        if not await containers.count() and count is None and cfg.get('comment_selector'):
+            legacy = page.locator(cfg['comment_selector'])
+            if await legacy.count():
+                return []
+        buttons = page.locator(TOGGLE)
+        if not clicked and expected != 0:
+            for i in range(min(await buttons.count(), 5)):
+                button = buttons.nth(i)
+                if await button.is_visible() and await button.get_attribute('aria-expanded') == 'false':
+                    await button.click(timeout=3000)
+                    clicked = True
+                    break
+        raw = []
+        busy = False
+        if listing is not None:
+            raw, busy = await listing.evaluate(r'''el => {
+                const cards=[...el.children].filter(n=>n.matches('.comment-item-_-container'));
+                const result=[];
+                for(let index=0;index<cards.length;index++) {
+                    const c=cards[index];
+                    if(!c.querySelector('.comment-item-header-_-container svg g[id="24/em/ic_officialbadge_special_medium"]'))continue;
+                    const t=c.querySelectorAll('.comment-item-header-_-time');
+                    const date=t[0];
+                    const stamp=date?.getAttribute('datetime') || date?.getAttribute('data-timestamp')
+                        || date?.getAttribute('data-created-at') || date?.querySelector('time[datetime]')?.getAttribute('datetime');
+                    const author=c.querySelector('.comment-item-header-profile-name-_-name');
+                    const text=c.querySelector('.comment-item-content-_-comment .line-clamp-node-view-_-container');
+                    result.push({comment_id:c.getAttribute('data-wev-comment-id'),
+                        parent_id:c.getAttribute('data-parent-comment-id') || c.getAttribute('data-root-comment-id'),
+                        is_reply:c.classList.contains('comment-item-_--instant-reply'),
+                        published:date?.innerText?.trim() || '',timestamp:stamp,source_index:index,
+                        ready:!!(t.length===1 && date?.innerText?.trim() && author?.textContent?.trim() && text),
+                        snapshot:(author?.textContent || '')+'\n'+(text?.textContent || '')});
                 }
-            }
-        }''')
-        await page.wait_for_timeout(250)
-        if await cards.count() == before:
-            break
-    cards = listing.locator(':scope > ' + CARD)
-    if await cards.count() > 200:
-        raise ValueError('艺人评论超过单张图片的 200 条上限，请分批处理。')
-    raw, seen = [], set()
+                const region=el.closest('.comment-shape-by-item-type-_-container') || el;
+                const busy=region?.getAttribute('aria-busy')==='true' || !!region?.querySelector('[aria-busy="true"], [role="progressbar"]');
+                return [result,busy];
+            }''')
+        ids = [r['comment_id'] for r in raw]
+        valid = all(ids) and len(ids) == len(set(ids)) and all(r['ready'] for r in raw)
+        ready = count is not None and not count['approximate'] and expected == len(raw) and valid and not busy
+        # An explicit, stable zero is different from a missing counter.
+        if count is not None and not count['approximate'] and expected == 0 and not raw and not busy:
+            ready = True
+        if ready:
+            key = (expected, tuple((r['comment_id'], r['published'], r['snapshot']) for r in raw))
+            if key != stable_key:
+                stable_key, stable_since = key, time.monotonic()
+            if time.monotonic() - stable_since >= (1.0 if expected == 0 else .4):
+                break
+        else:
+            stable_key = None
+        if count is None:
+            problem = '未识别艺人评论计数'
+        elif count['approximate']:
+            problem = '艺人评论数为近似值，无法确认完整数量'
+        elif not valid:
+            problem = '评论编号、作者或发布时间尚未完整加载'
+        else:
+            problem = f'网页显示 {expected} 条艺人评论，本次仅读取 {len(raw)} 条'
+        if time.monotonic() >= deadline:
+            raise ValueError(f'艺人评论加载等待超时：{problem}。已停止截图，原存档保留；请检查评论区和网络后重试。')
+        if listing is not None and not ready and scrolls < cfg['max_scrolls'] and time.monotonic() - last_scroll >= .8:
+            cards = listing.locator(':scope > ' + CARD)
+            if await cards.count():
+                await cards.last.scroll_into_view_if_needed(timeout=2000)
+            await listing.evaluate('''el => {
+                for(let n=el;n;n=n.parentElement) {
+                    if(n.scrollHeight>n.clientHeight+4 && /auto|scroll/.test(getComputedStyle(n).overflowY)) {
+                        n.scrollTop=n.scrollHeight;return;
+                    }
+                }
+            }''')
+            scrolls += 1
+            last_scroll = time.monotonic()
+        await page.wait_for_timeout(200)
     api_parents = api_parents or {}
-    for index in range(await cards.count()):
-        card = cards.nth(index)
-        # Badge must belong to this comment's own header, never a nested reply.
-        if not await card.locator('.comment-item-header-_-container ' + BADGE).count():
-            continue
-        comment_id = await card.get_attribute('data-wev-comment-id')
-        if not comment_id:
-            raise ValueError('艺人评论缺少唯一编号，无法安全绑定译文。')
-        if comment_id in seen:
-            continue
-        seen.add(comment_id)
-        parent = await card.get_attribute('data-parent-comment-id') or await card.get_attribute('data-root-comment-id')
-        parent = parent or api_parents.get(comment_id)
-        times = card.locator(TIME)
-        if await times.count() != 1:
-            raise ValueError('艺人评论缺少唯一发布时间，无法确定译文顺序。')
-        raw.append({'card': card, 'comment_id': comment_id, 'parent_id': parent,
-                    'is_reply': 'comment-item-_--instant-reply' in (await card.get_attribute('class') or '').split(),
-                    'published': await times.inner_text(), 'source_index': index})
-    # API IDs occasionally omit the namespace prefix; use only a unique match.
+    seen = set(ids)
     for record in raw:
+        record.pop('ready');record.pop('snapshot')
+        record['timestamp'] = machine_time(record.get('timestamp'))
+        record['card'] = listing.locator(CARD + '[data-wev-comment-id=' + json.dumps(record['comment_id']) + ']')
+        record['parent_id'] = record['parent_id'] or api_parents.get(record['comment_id'])
         if not record.get('parent_id'):
             short = record['comment_id'].split('-')[-1]
-            candidates = [v for k, v in api_parents.items() if k == short]
-            if len(candidates) == 1:
-                record['parent_id'] = candidates[0]
+            if short in api_parents and sum(cid.split('-')[-1] == short for cid in seen) == 1:
+                record['parent_id'] = api_parents[short]
         parent = record.get('parent_id')
         if parent and parent not in seen:
             matches = [cid for cid in seen if cid.split('-')[-1] == str(parent)]

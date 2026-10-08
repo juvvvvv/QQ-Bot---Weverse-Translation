@@ -150,7 +150,7 @@ class NativeCommentTests(unittest.IsolatedAsyncioTestCase):
         await self.fixture()
         await self.page.locator('.base-comment-artist-count-and-toggle-_-count').evaluate("el=>el.textContent='15'")
         with self.assertRaisesRegex(ValueError,'仅读取 14'):
-            await self.browser.extract(self.page,'https://weverse.io/plave/artist/3-241901329','123456',self.cfg|{'comment_selector':''})
+            await self.browser.extract(self.page,'https://weverse.io/plave/artist/3-241901329','123456',self.cfg|{'comment_selector':'','comment_wait_seconds':1})
         self.assertEqual(store.posts(),[])
 
     async def test_native_comments_disabled_and_zero_are_distinct(self):

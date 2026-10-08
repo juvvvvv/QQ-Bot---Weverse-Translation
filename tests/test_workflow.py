@@ -458,7 +458,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         await node.evaluate('(el,text)=>el.textContent=text', text)
         media_before = await self.page.locator('.post .media').bounding_box()
         card_before = await self.page.locator('.post').bounding_box()
-        cfg = self.cfg | {'comment_selector': ''}
+        cfg = self.cfg | {'comment_selector': '', 'capture_artist_comments': False}
         post = await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',cfg)
         media_after = await self.page.locator('.post .media').bounding_box()
         card_after = await self.page.locator('.post').bounding_box()
@@ -481,7 +481,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         .media{height:400px;background:rgb(160,20,80)}
         </style><article class="post"><div class="artist">YEJUN</div>
         <p class="text">예쁜하루☺️</p><div class="media" role="img"></div></article>''')
-        cfg = self.cfg | {'comment_selector': ''}
+        cfg = self.cfg | {'comment_selector': '', 'capture_artist_comments': False}
         post = await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',cfg)
         slot = post['slots'][0]
         self.assertEqual(slot['x'], 16)
@@ -521,7 +521,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         <div id="consent" role="dialog"><p>Weverse asks for your consent to use your personal data</p>
         <button onclick="window.choice='reject';document.getElementById('consent').remove()">Do not consent</button>
         <button onclick="window.choice='accept'">Consent</button></div>''')
-        cfg=self.cfg|{'comment_selector':'','author_selector':'.avatar-decorator-_-title'}
+        cfg=self.cfg|{'comment_selector':'','capture_artist_comments':False,'author_selector':'.avatar-decorator-_-title'}
         post=await self.browser.extract(self.page,'https://weverse.io/plave/artist/1234','123456',cfg)
         self.assertEqual(await self.page.evaluate('window.choice'),'reject')
         self.assertEqual(post['slots'][0]['author'],'YEJUN')

@@ -29,10 +29,13 @@ async def main():
   await expect(page.locator('#busy')).to_be_hidden()
   assert await page.locator('#preview img').evaluate('(el)=>el.naturalHeight')==900
   await page.locator('[data-tab="settings"]').click()
+  await expect(page.locator('[name="comment_wait_seconds"]')).to_have_value('30')
+  await page.locator('[name="comment_wait_seconds"]').fill('60')
   await page.locator('[name="owner_qq"]').fill('111111')
   await page.locator('[name="groups"]').fill('123456')
   await page.locator('#settings-form button[type=submit]').click()
   await expect(page.locator('#busy')).to_be_hidden()
+  await expect(page.locator('[name="comment_wait_seconds"]')).to_have_value('60')
   await page.locator('[data-tab="members"]').click()
   await page.locator('#member-form [name="group_id"]').select_option('123456')
   await page.locator('#member-form [name="user_id"]').fill('222222')
@@ -105,7 +108,7 @@ async def main():
   assert await page.locator('h1').count()==1
   assert await page.locator('section').count()==13
   assert not errors, errors
-  print(json.dumps({'status':'passed','flows':['演示截图→两段译文→完成→PNG下载','查看原图','保存设置','level3授权→取消','上传→原图点选两个位置→一次输入完整译文','刷新后档案保留','390px窄屏无横向溢出','HTML说明书13节','文字水印→描边→位置9→预览→保存，无PNG入口','按群永久清空且保留其他仓库'],'console_errors':errors},ensure_ascii=False))
+  print(json.dumps({'status':'passed','flows':['演示截图→两段译文→完成→PNG下载','查看原图','保存设置和30→60秒评论等待','level3授权→取消','上传→原图点选两个位置→一次输入完整译文','刷新后档案保留','390px窄屏无横向溢出','HTML说明书13节','文字水印→描边→位置9→预览→保存，无PNG入口','按群永久清空且保留其他仓库'],'console_errors':errors},ensure_ascii=False))
   await browser.close()
 
 if __name__=='__main__':

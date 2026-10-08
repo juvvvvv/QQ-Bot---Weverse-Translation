@@ -5,7 +5,7 @@ import stat
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '3.0.0-preview1'
+VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
 COMMON_FILES = ('README.md', 'VERSION', 'run.py', 'requirements.txt',
                 'requirements-dev.txt', 'docker-compose.qq.yml', '.gitattributes')
 COMMON_DIRS = ('weverse_bot', 'static', 'docs', 'tests', 'scripts')
@@ -19,7 +19,7 @@ def common_files():
         paths.extend(p for p in (ROOT / name).rglob('*')
                      if p.is_file() and not p.is_symlink()
                      and '__pycache__' not in p.parts and p.suffix != '.pyc'
-                     and p.name != 'v3-package-results.txt')
+                     and not p.name.endswith('package-results.txt'))
     return sorted(paths)
 
 
@@ -38,7 +38,8 @@ def quickstart(platform):
 
 本轮：自动读取艺人评论；单一译文框；独立一行 + 分段；/e 顺序引用本段表情；补充新评论；仅保存最新成功版本。
 新水印默认 8（中下），旧配置位置保留。如希望底部水印，请在面板改为 8 后保存并重新生成。
-详细试用步骤：docs/v3-validation.md。
+本次修复：自动选择 Cookie“不同意并继续”；等待完整艺人评论，默认30秒、可调5–120秒；排序不依赖页面语言。
+详细更新步骤：docs/preview2-validation.md。
 '''
 
 
@@ -55,7 +56,7 @@ def build(platform):
     members[f'先读这里-{platform}.txt'] = quickstart(platform).encode('utf-8-sig')
     with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name, data in sorted(members.items()):
-            info = zipfile.ZipInfo(prefix + name, date_time=(2026, 10, 7, 0, 0, 0))
+            info = zipfile.ZipInfo(prefix + name, date_time=(2026, 10, 8, 0, 0, 0))
             info.create_system = 3
             mode = 0o755 if name.endswith('.command') else 0o644
             info.external_attr = (stat.S_IFREG | mode) << 16
