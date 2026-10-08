@@ -1,17 +1,24 @@
-# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview8
+# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview9
 
 给出 Weverse 艺人或粉丝原帖网址和人工译文，保留原文，在原文下方插入中文，再拼接艺人评论，最后添加文字水印。无需 AI API Key。
 
 **Windows：Python 3.14；Mac：Python 3.13（包含 Intel Mac）。** 两个系统共用源代码，各有自己的启动文件：
 
 - [Windows 下载包](downloads/Weverse-QQ-Bot-Windows.zip)：解压后先运行 `首次安装.bat`，再运行 `启动工作台.bat`。
-- [Mac 上一版 preview3 下载包](downloads/Weverse-QQ-Bot-Mac.zip)：解压后先运行 `首次安装.command`，再运行 `启动工作台.command`。
+- [Mac 下载包](downloads/Weverse-QQ-Bot-Mac.zip)：解压后先运行 `首次安装.command`，再运行 `启动工作台.command`。
 - [中文 HTML 说明书](docs/manual.html)：下载后可离线打开，工作台也有入口。
-- [Windows 本轮修复、升级和验证范围](docs/preview8-validation.md)。
+- [Windows 本轮修复、升级和验证范围](docs/preview9-validation.md)。
 
 已正常安装的项目：先关闭程序及登录浏览器，备份 `data`。同时替换 **weverse_bot、static、docs** 和对应系统两个启动文件、`run.py`、`VERSION`、`requirements.txt`；保留 `data` 与 `.venv`。本轮依赖未变化，不需要重装。首次启动自动增加新版存档表，旧登录、选择器、权限和水印保留。
 
-## 最新修复（preview8，仅打包 Windows）
+## 最新修复（preview9，Windows + Mac）
+
+- 动态的点赞、评论数字和分享图标独立生成，再接到动态截图底部；避开网页外层容器、SVG 及文字标签的裁切规则。
+- 保留原网页的图标和数字显示（如 10K+、2.1K），不重新推算数量；截图与烤制都使用完整互动栏，底部留足空间后最后加水印。
+- 正文、配图和评论沿用现有处理方式，包含多图、没有艺人评论的原帖、粉丝原帖、/e、/k 与补充/重烤。
+- Windows 和 Mac 同步打包，共用本版源码。Windows 用 Python 3.14，Mac 用 Python 3.13（含 Intel Mac）；依赖未变，保留 data 与本机 .venv，原校准值继续使用。
+
+## 上一版修复（preview8，仅打包 Windows）
 
 - 多张配图全部加载并解码后再测量动态高度，互动栏随内容正常排在最后一张图下面。
 - 互动栏和图标不受旧页面的高度限制、收缩或 SVG 基线溢出影响；截图包含实际完整底边，点赞、评论数字和分享图标不被裁切。

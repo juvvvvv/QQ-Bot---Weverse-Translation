@@ -1,0 +1,30 @@
+/workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_ancestor_root_toolbar_and_caption_clipping_leave_all_footer_pixels (test_preview9.IsolatedFooterTests.test_ancestor_root_toolbar_and_caption_clipping_leave_all_footer_pixels) ... Executing <Task pending name='Task-5' coro=<IsolatedFooterTests.test_ancestor_root_toolbar_and_caption_clipping_leave_all_footer_pixels() running at /workspace/QQ-Bot---Weverse-Translation/tests/test_preview9.py:76> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:181, ProtocolCallback.__init__.<locals>.cb() at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:264] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 0.104 seconds
+ok
+test_footer_precedes_artist_comments_and_does_not_change_comment_models (test_preview9.IsolatedFooterTests.test_footer_precedes_artist_comments_and_does_not_change_comment_models) ... ok
+test_preview8_style_raw_capture_loses_icon_rows_in_clipped_ancestor (test_preview9.IsolatedFooterTests.test_preview8_style_raw_capture_loses_icon_rows_in_clipped_ancestor) ... ok
+test_toolbar_model_drops_handlers_scripts_and_resource_urls (test_preview9.IsolatedFooterTests.test_toolbar_model_drops_handlers_scripts_and_resource_urls) ... ok
+test_translate_skip_watermark_and_repeat_preserve_source_and_restore_styles (test_preview9.IsolatedFooterTests.test_translate_skip_watermark_and_repeat_preserve_source_and_restore_styles) ... ok
+test_background_browser_with_suspended_frames_still_finishes_capture (test_preview8.MultiPhotoTests.test_background_browser_with_suspended_frames_still_finishes_capture) ... /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/events.py:88: ResourceWarning: unclosed file <_io.BufferedReader name='/tmp/plave-tests-j6g177vo/originals/b595e0f4831c4adabf72f71e99c8b517.png'>
+  self._context.run(self._callback, *self._args)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_small_visible_svg_overflow_is_captured_instead_of_padded_over (test_preview8.MultiPhotoTests.test_small_visible_svg_overflow_is_captured_instead_of_padded_over) ... ok
+test_translation_skip_and_bottom_watermark_preserve_photos_and_toolbar (test_preview8.MultiPhotoTests.test_translation_skip_and_bottom_watermark_preserve_photos_and_toolbar) ... ok
+test_zero_one_two_and_five_photos_at_both_pixel_scales (test_preview8.MultiPhotoTests.test_zero_one_two_and_five_photos_at_both_pixel_scales) ... Executing <Task pending name='Task-147' coro=<MultiPhotoTests.test_zero_one_two_and_five_photos_at_both_pixel_scales() running at /workspace/QQ-Bot---Weverse-Translation/tests/test_preview8.py:70> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:181, ProtocolCallback.__init__.<locals>.cb() at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:264] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 0.135 seconds
+ok
+test_absent_artist_and_normal_regions_allow_original_skip_and_translation (test_preview7.OriginalTests.test_absent_artist_and_normal_regions_allow_original_skip_and_translation) ... ok
+test_busy_panel_and_broken_artist_counter_still_stop (test_preview7.OriginalTests.test_busy_panel_and_broken_artist_counter_still_stop) ... ok
+test_empty_artist_title_and_list_without_counter_do_not_block_original (test_preview7.OriginalTests.test_empty_artist_title_and_list_without_counter_do_not_block_original) ... ok
+test_fan_original_without_any_comment_region_is_one_segment (test_preview7.OriginalTests.test_fan_original_without_any_comment_region_is_one_segment) ... ok
+test_inside_action_bar_is_copied_once_without_deleting_original_text (test_preview7.OriginalTests.test_inside_action_bar_is_copied_once_without_deleting_original_text) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_preview7.py:123: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  self.assertNotIn((255,0,204),set(image.getdata()))
+ok
+test_late_artist_region_after_four_seconds_is_not_omitted (test_preview7.OriginalTests.test_late_artist_region_after_four_seconds_is_not_omitted) ... ok
+test_main_toolbar_precedes_artist_section_and_ui_labels_disappear (test_preview7.OriginalTests.test_main_toolbar_precedes_artist_section_and_ui_labels_disappear) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 108.012s
+
+OK

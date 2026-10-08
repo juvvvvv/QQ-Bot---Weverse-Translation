@@ -12,6 +12,7 @@ from .page_cleanup import (reject_optional_consent, remove_site_chrome,
                            ensure_author_visible, prepare_emoji_text)
 from .capture_layout import read_comment_counts, add_count_row, measure_card, screenshot_card
 from .post_adapter import adapt_post, place_post_toolbar
+from .post_toolbar import capture_post_card
 from .comment_image import comment_model, render_comment
 from .artist_comments import (collect_artist_comments, stage_comment, decoration, TEXT, AUTHOR,
                               artist_avatar_sources, ensure_comment_avatar, avatar_source)
@@ -330,6 +331,7 @@ class Browser:
             # including cards taller than the viewport and comments further down.
             await page.evaluate('window.scrollTo(0,0)')
             native_model = None
+            toolbar_layout = None
             if metadata:
                 native_model = await comment_model(page, card, metadata,
                                                    f'艺人评论 · {len(native)}' if index == 1 else '')
@@ -342,14 +344,19 @@ class Browser:
                     boxes['padding'] = 16
                 finally:
                     await isolated.close()
+            elif index == 0:
+                raw, boxes, toolbar_layout = await capture_post_card(page, card, text_selector)
             else:
                 boxes = await measure_card(card, text_selector)
                 raw = await screenshot_card(page, boxes, card)
             # An asynchronously arriving CMP must be rejected before accepting
             # pixels; recapture after it closes instead of saving a covered image.
             if await reject_optional_consent(page) and not metadata:
-                boxes = await measure_card(card, text_selector)
-                raw = await screenshot_card(page, boxes, card)
+                if index == 0:
+                    raw, boxes, toolbar_layout = await capture_post_card(page, card, text_selector)
+                else:
+                    boxes = await measure_card(card, text_selector)
+                    raw = await screenshot_card(page, boxes, card)
             image = Image.open(io.BytesIO(raw)).convert('RGB')
             scale = image.width / boxes['w']
             wanted_height = round(boxes['target_height'] * scale)
@@ -376,6 +383,7 @@ class Browser:
                           'scale': scale, 'bottom_padding': round(boxes['padding'] * scale),
                           'trailing_text': boxes['trailing_text'],
                           **({'native_card': native_model, 'fragment_top': offset, 'fragment_height': image.height} if native_model else {}),
+                          **({'toolbar_layout': toolbar_layout} if toolbar_layout else {}),
                           **({'comment_counts': counts, 'post_kind':cfg.get('post_kind','artist')} if index == 0 else {}),
                           'fingerprint': fingerprint, 'author': author,
                           'reusable': bool(store.memory(fingerprint, group))})

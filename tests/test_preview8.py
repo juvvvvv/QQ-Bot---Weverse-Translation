@@ -48,6 +48,15 @@ class MultiPhotoTests(unittest.IsolatedAsyncioTestCase):
             root=await page.locator('.post').bounding_box()
             bar=await page.locator('[data-wvbot-owned-toolbar] .toolbar-_-container').bounding_box()
             icons=await page.locator('[data-wvbot-owned-toolbar] svg').evaluate_all('ns=>ns.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})')
+            # The original-post toolbar is now an independent footer. Its
+            # output rectangles, rather than the site's clipped coordinates,
+            # are the positions whose pixels must be complete in the PNG.
+            layout=post['slots'][0].get('toolbar_layout')
+            if layout:
+                icons=[{'x':r['x']/scale+root['x'],
+                        'y':(layout['top']+r['y'])/scale+root['y'],
+                        'width':r['width']/scale,'height':r['height']/scale}
+                       for r in layout['icons']]
             media=await page.locator('.photos img').evaluate_all('ns=>ns.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})')
             self.assertEqual(await page.locator('[data-wvbot-owned-toolbar] button').all_inner_texts(),['10K+','2.1K',''])
             self.assertEqual(await page.locator('[data-wvbot-owned-toolbar]').count(),1)
