@@ -22,7 +22,7 @@ def split_body(body):
     if not any(blocks):
         raise ValueError('请填写中文译文；补充模式在第一段前单独写一行 +。')
     if any(not block for block in blocks):
-        raise ValueError('有空白译文段，请检查连续的 + 或末尾多出的 +。')
+        raise ValueError('有空白译文段；无需翻译请单独填 /k。请检查连续的 + 或末尾多出的 +。')
     if len(blocks) > MAX_BLOCKS:
         raise ValueError('单张图片最多 201 个译文版块。')
     return append, blocks
@@ -84,7 +84,7 @@ def prepare(post, body):
         mode = '待补译评论' if append else '正文及艺人评论'
         raise ValueError(f'{mode}需要 {len(targets)} 段译文，实际提供 {len(blocks)} 段。请用单独一行 + 分隔；原存档不会被覆盖。')
     for slot, text in zip(targets, blocks):
-        saved[str(slot['key'])] = expand_emoji(text, slot)
+        saved[str(slot['key'])] = '/k' if text == '/k' else expand_emoji(text, slot)
     return saved
 
 

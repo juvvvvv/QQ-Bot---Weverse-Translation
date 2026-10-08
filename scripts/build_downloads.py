@@ -1,4 +1,5 @@
 """Build complete, platform-specific distributions without private runtime data."""
+import argparse
 from pathlib import Path
 import hashlib
 import stat
@@ -32,14 +33,15 @@ def quickstart(platform):
 中文说明书：docs/manual.html，可离线用浏览器打开。
 
 已经安装成功的旧项目：关闭工作台和登录浏览器，备份 data。
-把新版 weverse_bot、static、docs 完整替换进旧项目，并替换 run.py、requirements.txt 和两个启动文件。
+把新版 weverse_bot、static、docs 完整替换进旧项目，并替换 run.py、VERSION、requirements.txt 和两个启动文件。
 保留旧项目的 data 和 .venv，本轮依赖未变化，无需重装。
 不要把 Windows 和 Mac 的 .venv 互相复制。
 
 本轮：自动读取艺人评论；单一译文框；独立一行 + 分段；/e 顺序引用本段表情；补充新评论；仅保存最新成功版本。
 新水印默认 8（中下），旧配置位置保留。如希望底部水印，请在面板改为 8 后保存并重新生成。
-本次修复：自动分别拒绝中央同意弹窗和底部 Cookie 条；重试临时不可点击的按钮，正确判断 iframe 与对应弹窗关闭；首页禁止缓存、启动器每次打开新参数首页。保留 data/browser 中网站实际写入的拒绝偏好，网站再次询问时自动拒绝。
-详细更新步骤：docs/preview3-validation.md。
+本次修复：先拒绝中央弹窗并等待独立遮罩关闭，再拒绝底部 Cookie 条；本机会话自动建立和恢复；补齐评论头像、去除多余曲线和半截图标、完整保留原文后插入译文；/k 跳过译文；水印 Arial。
+旧截图不会自动改变，请重新读取帖子再烤制；最新已存译文可继续复用。
+详细更新步骤：docs/preview4-validation.md。
 '''
 
 
@@ -86,9 +88,16 @@ def build(platform):
 
 
 if __name__ == '__main__':
-    win = build('Windows')
-    mac = build('Mac')
-    shared = set(win) & set(mac)
-    assert all(win[name] == mac[name] for name in shared)
-    assert all(path.relative_to(ROOT).as_posix() in shared for path in common_files())
-    print(f'OK: {len(shared)} shared files identical; CRC, Python syntax, launch files and permissions checked.')
+    parser = argparse.ArgumentParser(description='Build selected platform packages without private data')
+    parser.add_argument('--platform', choices=['Windows', 'Mac', 'all'], default='all')
+    selection = parser.parse_args().platform
+    selected = list(PLATFORMS) if selection == 'all' else [selection]
+    built = {platform: build(platform) for platform in selected}
+    if len(built) == 2:
+        win, mac = built['Windows'], built['Mac']
+        shared = set(win) & set(mac)
+        assert all(win[name] == mac[name] for name in shared)
+        assert all(path.relative_to(ROOT).as_posix() in shared for path in common_files())
+        print(f'OK: {len(shared)} shared files identical; CRC, Python syntax, launch files and permissions checked.')
+    else:
+        print(f'OK: {selection} only; CRC, Python syntax and platform launch files checked. Other packages unchanged.')

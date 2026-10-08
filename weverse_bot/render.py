@@ -46,7 +46,7 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
     positions, jobs = [], []
     for slot in slots:
         text = translations.get(str(slot['key']), '').strip()
-        if text:
+        if text and text != '/k':
             y = int(slot['y'])
             if y < 0 or y > source.height:
                 raise ValueError('翻译插入位置超出了截图高度。')
@@ -68,7 +68,7 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
         jobs.append(mark_job)
     images = render_text_images(source.width, jobs, font_path)
     mark = images.pop() if mark_job else None
-    translated_slots = [s for s in slots if translations.get(str(s['key']), '').strip()]
+    translated_slots = [s for s in slots if translations.get(str(s['key']), '').strip() not in ('', '/k')]
     for index, slot in enumerate(translated_slots):
         if slot.get('trailing_text'):
             ink = ImageOps.invert(images[index]).getbbox()

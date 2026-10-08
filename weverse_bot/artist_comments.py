@@ -193,12 +193,59 @@ async def collect_artist_comments(page, cfg, api_parents=None):
     return order_comments(raw)
 
 
-async def stage_comment(page, record, width, heading=''):
+async def avatar_source(card, author_selector, image_selector):
+    return await card.evaluate('''(el,{author,image}) => {
+        const name=el.querySelector(author), img=el.querySelector(image);
+        const label=name ? [...name.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim() || name.textContent.trim() : '';
+        let src=img?.currentSrc || img?.getAttribute('src') || '';
+        if (src.startsWith('data:') && img?.complete && img.naturalWidth) {
+            try {
+                const canvas=document.createElement('canvas');canvas.width=canvas.height=16;
+                const context=canvas.getContext('2d');context.drawImage(img,0,0,16,16);
+                const pixels=context.getImageData(0,0,16,16).data;
+                if(!pixels.some((value,i)=>i%4===3 && value))src='';
+            } catch {}
+        }
+        return {author:label,src};
+    }''', {'author':author_selector,'image':image_selector})
+
+
+async def artist_avatar_sources(root, author_selector, records):
+    sources = {}
+    main = await avatar_source(root, author_selector, '.avatar-decorator-_-image img, .community-artist-postId-_-header img')
+    if main['author'] and main['src']:
+        sources[main['author']] = main['src']
+    for record in records:
+        avatar = await avatar_source(record['card'], AUTHOR, '.comment-item-_-image_area img')
+        record['avatar_author'] = avatar['author']
+        if avatar['author'] and avatar['src']:
+            sources.setdefault(avatar['author'], avatar['src'])
+    return sources
+
+
+async def ensure_comment_avatar(card):
+    images = card.locator('.comment-item-_-image_area img')
+    if await images.count() != 1 or not await images.is_visible():
+        raise ValueError('艺人评论头像不可见，已停止截图，请等待头像加载后重试。')
+    valid = await images.evaluate('''img => {
+        if(!img.complete || !img.naturalWidth)return false;
+        if(!img.src.startsWith('data:'))return true;
+        try {
+            const canvas=document.createElement('canvas');canvas.width=canvas.height=16;
+            const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,16,16);
+            return ctx.getImageData(0,0,16,16).data.some((value,i)=>i%4===3 && value);
+        } catch {return false;}
+    }''')
+    if not valid:
+        raise ValueError('艺人评论头像仍是空白占位图，未找到同一艺人的真实头像，已停止截图。请等待网页头像加载后重试。')
+
+
+async def stage_comment(page, record, width, heading='', avatar_sources=None):
     """Keep original contents/assets/CSS, normalize layout before native capture."""
-    handle = await record['card'].evaluate_handle('''(original,{width,depth,reply,heading}) => {
+    handle = await record['card'].evaluate_handle('''(original,{width,depth,reply,heading,avatarSource}) => {
         document.querySelector('[data-wvbot-stage]')?.remove();
         const stage=document.createElement('div');stage.dataset.wvbotStage='';
-        stage.style.cssText=`position:relative;box-sizing:border-box;width:${width}px;padding:16px;background:white;color:#111;`;
+        stage.style.cssText=`position:relative;box-sizing:border-box;width:${width}px;padding:16px;background:white;color:#111;overflow:hidden;`;
         const body=original.querySelector('.line-clamp-node-view-_-container');
         stage.style.fontFamily=getComputedStyle(body).fontFamily;
         stage.style.fontSize=getComputedStyle(body).fontSize;
@@ -208,12 +255,33 @@ async def stage_comment(page, record, width, heading=''):
         const indent=Math.min(depth,4)*28;
         card.style.cssText=`position:relative!important;display:flex!important;align-items:flex-start!important;gap:12px!important;box-sizing:border-box!important;margin:0 0 0 ${indent}px!important;padding:0!important;width:calc(100% - ${indent}px)!important;height:auto!important;min-height:0!important;background:white!important;text-decoration:none!important;color:inherit!important;`;
         const avatar=card.querySelector('.comment-item-_-image_area');
-        if(avatar){avatar.style.cssText=`position:static!important;flex:0 0 ${reply?24:32}px!important;width:${reply?24:32}px!important;height:auto!important;`;
-            for(const n of avatar.querySelectorAll('span,img'))n.style.setProperty('position','static','important');}
+        if(avatar){
+            const avatarSize=reply?24:32;
+            avatar.style.cssText=`position:static!important;display:block!important;flex:0 0 ${avatarSize}px!important;width:${avatarSize}px!important;height:${avatarSize}px!important;visibility:visible!important;opacity:1!important;transform:none!important;`;
+            for(const n of avatar.querySelectorAll('*'))n.style.cssText=`position:static!important;display:block!important;box-sizing:border-box!important;width:${avatarSize}px!important;height:${avatarSize}px!important;margin:0!important;padding:0!important;visibility:visible!important;opacity:1!important;transform:none!important;border-radius:50%!important;overflow:hidden!important;`;
+            const img=avatar.querySelector('img');
+            if(img){
+                if(avatarSource){img.removeAttribute('srcset');img.src=avatarSource;}
+                else if(original.querySelector('.comment-item-_-image_area img')?.currentSrc){img.removeAttribute('srcset');img.src=original.querySelector('.comment-item-_-image_area img').currentSrc;}
+                img.loading='eager';img.decoding='sync';img.style.setProperty('object-fit','cover','important');
+            }
+        }
         const area=card.querySelector('.comment-item-_-text_area');
         area.style.cssText=`box-sizing:border-box!important;position:relative!important;flex:1!important;min-width:0!important;margin:0!important;width:auto!important;height:auto!important;background:white!important;padding:${reply?'0':'14px 16px'}!important;border:${reply?'0':'1px solid #e5e9f2'}!important;border-radius:${reply?'0':'18px'}!important;`;
         if(!reply)area.dataset.wvbotFrame='';
         for(const n of card.querySelectorAll('.comment-item-_-more_wrap,.comment-item-_-translate'))n.style.setProperty('display','none','important');
+        // The viewer may retain a short box while its child lines overflow.
+        // Normalize the entire original text chain before measuring insertion.
+        for(const n of card.querySelectorAll('.comment-item-content-_-comment,.line-clamp-node-view-_-wrap,.line-clamp-node-view-_-container')){
+            for(const [key,value] of Object.entries({position:'static',display:'block',height:'auto','min-height':'0','max-height':'none',overflow:'visible','-webkit-line-clamp':'unset','line-clamp':'unset',transform:'none'}))n.style.setProperty(key,value,'important');
+        }
+        const interaction=card.querySelector('.comment-item-_-interaction');
+        if(interaction){
+            interaction.style.cssText='position:static!important;display:block!important;height:auto!important;overflow:visible!important;margin-top:12px!important;transform:none!important;';
+            for(const n of interaction.querySelectorAll('.toolbar-_-container,.toolbar-_-left,.toolbar-_-right'))n.style.cssText='position:static!important;display:flex!important;align-items:center!important;gap:16px!important;height:auto!important;margin:0!important;padding:0!important;transform:none!important;';
+            const originalColors=[...original.querySelectorAll('.comment-item-_-interaction button')].map(n=>getComputedStyle(n).color);
+            [...interaction.querySelectorAll('button')].forEach((n,i)=>{n.style.cssText=`position:static!important;display:inline-flex!important;align-items:center!important;gap:6px!important;line-height:1.4!important;height:auto!important;margin:0!important;padding:0!important;background:transparent!important;border:0!important;color:${originalColors[i] || 'inherit'}!important;transform:none!important;`;});
+        }
         const text=card.querySelector('.line-clamp-node-view-_-container');
         text.style.setProperty('white-space','pre-wrap','important');
         text.style.setProperty('overflow-wrap','anywhere','important');
@@ -231,9 +299,9 @@ async def stage_comment(page, record, width, heading=''):
         if(reply){const line=document.createElement('span');line.dataset.wvbotConnector='';line.setAttribute('role','img');
             line.style.cssText='position:absolute;left:11px;top:36px;bottom:0;border-left:1px solid #e5e9f2;width:1px;';card.append(line);}
         stage.append(card);document.body.append(stage);return stage;
-    }''', {'width': width, 'depth': record['depth'], 'reply': record['is_reply'], 'heading': heading})
+    }''', {'width': width, 'depth': record['depth'], 'reply': record['is_reply'], 'heading': heading, 'avatarSource': (avatar_sources or {}).get(record.get('avatar_author'))})
     await handle.dispose()
-    await page.add_style_tag(content='[data-wvbot-stage] .comment-item-_-container::before,[data-wvbot-stage] .comment-item-_-container::after{display:none!important}')
+    await page.add_style_tag(content='[data-wvbot-stage] *::before,[data-wvbot-stage] *::after{content:none!important;display:none!important}')
     return page.locator('[data-wvbot-stage]')
 
 

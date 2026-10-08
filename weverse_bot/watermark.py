@@ -10,6 +10,7 @@ def text_job(width, cfg, body_size, scale):
     return {'text': cfg['text'], 'size': cfg['font_size'] * scale if cfg['font_size'] else body_size,
             'x': margin, 'text_width': width - margin * 2, 'centered': True,
             'color': cfg['color'], 'outline_color': cfg['outline_color'],
+            'font_family': 'Arial,"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif',
             'outline_width': cfg['outline_width'] * scale if cfg['outline'] else 0}
 
 

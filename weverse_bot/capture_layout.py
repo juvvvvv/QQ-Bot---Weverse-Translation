@@ -65,7 +65,7 @@ async def measure_card(card, text_selector):
             }
             return true;
         };
-        const rects=[];
+        const rects=[], originalRects=[];
         const add = r => { if(r.width && r.height && r.right>a.left && r.left<a.right && r.bottom>a.top) rects.push(r); };
         const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
         while(walker.nextNode()) {
@@ -74,17 +74,23 @@ async def measure_card(card, text_selector):
             const range=document.createRange(); range.selectNodeContents(node);
             for(const r of range.getClientRects()) add(r);
         }
-        for(const n of el.querySelectorAll('img,video,canvas,svg,[role="img"],.WidgetMedia,[data-wvbot-counts],[data-wvbot-frame]')) {
+        const originalWalker=document.createTreeWalker(text,NodeFilter.SHOW_TEXT);
+        while(originalWalker.nextNode()) {
+            const range=document.createRange();range.selectNodeContents(originalWalker.currentNode);
+            originalRects.push(...range.getClientRects());
+        }
+        const originalBottom=Math.max(b.bottom,...originalRects.map(r=>r.bottom));
+        for(const n of el.querySelectorAll('img,video,canvas,svg,[role="img"],.WidgetMedia,[data-wvbot-counts],[data-wvbot-frame],.toolbar-_-container,.comment-item-_-interaction')) {
             if(visible(n)) add(n.getBoundingClientRect());
         }
         const first=rects.length ? Math.min(...rects.map(r=>r.top)) : b.top;
-        const bottom=Math.max(b.bottom,...rects.map(r=>r.bottom));
+        const bottom=Math.max(originalBottom,...rects.map(r=>r.bottom));
         const padding=Math.max(0, Math.ceil(first-a.top));
         return {w:a.width, h:a.height, left:a.left+scrollX, top:a.top+scrollY,
-                y:b.bottom-a.top, x:b.left-a.left, text_width:b.width,
+                y:originalBottom-a.top, x:b.left-a.left, text_width:b.width,
                 font_size:parseFloat(getComputedStyle(text).fontSize),
                 content_bottom:bottom-a.top, padding, target_height:bottom-a.top+padding,
-                trailing_text:Math.abs(bottom-b.bottom)<1, scale:devicePixelRatio};
+                trailing_text:Math.abs(bottom-originalBottom)<1, scale:devicePixelRatio};
     }''', text_selector)
 
 

@@ -57,7 +57,7 @@ async def _render(width, jobs, font_path):
                     raise ValueError('浏览器无法加载自定义字体，请清空字体路径使用系统字体，或选择可用的 TTF/OTF 字体。')
             images = []
             for job in jobs:
-                await page.evaluate('''({width, text, size, x, text_width, centered, color, outline_color, outline_width=0}) => {
+                await page.evaluate('''({width, text, size, x, text_width, centered, color, outline_color, outline_width=0, font_family}) => {
                     const band = document.getElementById('band');
                     const p = document.getElementById('text');
                     band.style.width = width + 'px';
@@ -65,6 +65,7 @@ async def _render(width, jobs, font_path):
                     band.style.background = centered ? 'transparent' : 'white';
                     p.removeAttribute('style');
                     p.style.fontSize = size + 'px';
+                    if(font_family)p.style.fontFamily=font_family;
                     p.style.lineHeight = Math.max(size*1.65, size+outline_width*2+4) + 'px';
                     p.style.color = color || '#111111';
                     p.style.webkitTextStroke = outline_width + 'px ' + (outline_color || '#ffffff');

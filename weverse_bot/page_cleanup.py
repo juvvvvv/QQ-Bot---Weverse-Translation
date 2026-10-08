@@ -13,6 +13,7 @@ COOKIE_REJECT_NAMES = re.compile(
     r'Continue without consent|Ablehnen und fortfahren|拒否して続行|동의하지 않고 계속)\s*$', re.I,
 )
 COOKIE_LAYER = '[class*="_w_bottom_fixed_"]'
+FC_LAYER = '.fc-consent-root .fc-dialog-overlay, .fc-consent-root .fc-dialog[role="dialog"]'
 CONSENT_TITLE = re.compile(
     r'Weverse\s+asks for your consent|Weverse\s+bittet um Ihre Zustimmung|'
     r'Weverse.{0,20}请求您同意|Weverse.{0,20}征求您的同意', re.I,
@@ -54,6 +55,10 @@ async def _consent_visible(page):
     for frame in page.frames:
         if not await _frame_visible(frame):
             continue
+        layers = frame.locator(FC_LAYER)
+        for index in range(min(await layers.count(), 8)):
+            if await layers.nth(index).is_visible():
+                return True
         cookie_layers = frame.locator(COOKIE_LAYER).filter(
             has=frame.locator('a[href*="/policies/cookie"]'))
         for index in range(min(await cookie_layers.count(), 5)):
@@ -71,7 +76,14 @@ async def _wait_rejection_closed(page, frame, button, layer, deadline):
         if not await _frame_visible(frame):
             return True
         try:
-            if not await button.is_visible() and (not layer or not await layer.is_visible()):
+            layer_visible = await layer.is_visible() if layer else False
+            if layer and await layer.evaluate("el => el.classList.contains('fc-consent-root')"):
+                layer_visible = await layer.evaluate('''root => [...root.querySelectorAll('.fc-dialog-overlay,.fc-dialog[role="dialog"]')].some(el=>{
+                    if(!el.getClientRects().length)return false;
+                    for(let n=el;n;n=n.parentElement){const s=getComputedStyle(n);if(s.display==='none'||s.visibility==='hidden'||s.opacity==='0')return false;}
+                    return true;
+                })''')
+            if not await button.is_visible() and not layer_visible:
                 return True
         except BrowserError:
             if not await _frame_visible(frame):
@@ -112,17 +124,24 @@ async def _reject_prompts(page, wait_ms, viewport):
     widened = False
     while True:
         candidates, cookie_candidates = [], []
+        central_visible = False
         for frame in page.frames:
             if not await _frame_visible(frame):
                 continue
-            buttons = frame.get_by_role('button', name=REJECT_NAMES)
+            central = frame.locator(FC_LAYER)
+            central_visible = central_visible or any([await central.nth(i).is_visible() for i in range(min(await central.count(), 8))])
+            if await frame.get_by_text(CONSENT_TITLE).count():
+                central_visible = central_visible or any([await frame.get_by_text(CONSENT_TITLE).nth(i).is_visible() for i in range(min(await frame.get_by_text(CONSENT_TITLE).count(), 5))])
+            # The supplied fc class identifies the refusal independently of label language.
+            buttons = frame.locator('.fc-consent-root .fc-cta-do-not-consent').or_(frame.get_by_role('button', name=REJECT_NAMES))
             cookie_layers = frame.locator(COOKIE_LAYER).filter(
                 has=frame.locator('a[href*="/policies/cookie"]'))
             cookie_buttons = cookie_layers.get_by_role('button', name=COOKIE_REJECT_NAMES)
             candidates.extend((frame, buttons.nth(i)) for i in range(min(await buttons.count(), 5)))
             cookie_candidates.extend((frame, cookie_buttons.nth(i)) for i in range(min(await cookie_buttons.count(), 5)))
         # The central CMP (including one in an iframe) can cover the Cookie bar.
-        candidates.extend(cookie_candidates)
+        if not central_visible:
+            candidates.extend(cookie_candidates)
         clicked = False
         for frame, locator in candidates:
             if not await _frame_visible(frame) or not await locator.is_visible():
@@ -140,6 +159,8 @@ async def _reject_prompts(page, wait_ms, viewport):
             layer_handle = None
             try:
                 layer_handle = await button.evaluate_handle(r'''el => {
+                    const fc=el.closest('.fc-consent-root');
+                    if(fc)return fc; // includes the sibling overlay from the supplied DOM
                     const known = el.closest('[role="dialog"], dialog, [aria-modal="true"], [class*="_w_bottom_fixed_"]');
                     if (known) {
                         // Include a dedicated fixed backdrop, but not an app

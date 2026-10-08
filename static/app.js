@@ -3,16 +3,37 @@ const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const escapeHTML = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels = {pending:'待翻译',partial:'部分翻译',translated:'已完成',ignored:'旧版记录'};
-let csrf='', config={}, activePost=null, source='web', uploadFile=null, uploadURL='', uploadHeight=0, positions=[{key:'0',label:'正文',y:0}], selectedPosition=0, currentFilter='', toastTimer;
+let csrf='', sessionToken='', sessionRenewal=null, config={}, activePost=null, source='web', uploadFile=null, uploadURL='', uploadHeight=0, positions=[{key:'0',label:'正文',y:0}], selectedPosition=0, currentFilter='', toastTimer;
 let working=false;
+async function establishSession() {
+  if(!sessionRenewal)sessionRenewal=(async()=>{
+    const response=await fetch('/api/bootstrap',{cache:'no-store',credentials:'same-origin',headers:{'x-wv-bootstrap':'1'}});
+    const result=await response.json();
+    if(!response.ok)throw new Error(result.detail||'无法建立本机工作台会话。');
+    sessionToken=result.session;csrf=result.csrf;
+  })().finally(()=>{sessionRenewal=null;});
+  return sessionRenewal;
+}
+async function request(path, method='GET', body=null) {
+  for(let attempt=0;attempt<2;attempt++) {
+    const options={method,credentials:'same-origin',headers:{'x-wv-csrf':csrf,'x-wv-session':sessionToken}};
+    if(body instanceof FormData)options.body=body;
+    else if(body!==null){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+    const response=await fetch(path,options);
+    if(attempt===0&&(response.status===401||response.status===403)) {
+      let error={};try{error=await response.clone().json();}catch{}
+      if(response.status===401||error.detail==='页面已过期，请刷新后重试。') {
+        await establishSession();continue;
+      }
+    }
+    return response;
+  }
+}
 async function api(path, method='GET', body=null) {
-  const options={method,credentials:'same-origin',headers:{'x-wv-csrf':csrf}};
-  if(body instanceof FormData) options.body=body;
-  else if(body!==null){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
-  const response=await fetch(path,options);
+  const response=await request(path,method,body);
   let result;
   try{result=await response.json();}catch{throw new Error('服务器响应异常，请检查启动窗口。');}
-  if(!response.ok) throw new Error(typeof result.detail==='string'?result.detail:'输入格式有误，请检查填写内容。');
+  if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'输入格式有误，请检查填写内容。');
   return result;
 }
 function toast(message,error=false){$('#toast').textContent=message;$('#toast').classList.toggle('error',error);$('#toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').style.display='none',error?8500:4000);}
@@ -31,8 +52,8 @@ function switchSource(mode){source=mode;$$('[data-source]').forEach(el=>el.class
 function showPost(post){
  activePost=post;$('#preview').classList.remove('selecting');
  const groups='<option value="">仅本机</option>'+(config.groups||[]).map(g=>`<option value="${escapeHTML(g)}" ${g===post.group_id?'selected':''}>QQ 群 ${escapeHTML(g)}</option>`).join('');
- const originals=post.slots.map((slot,i)=>`<details class="original-block ${slot.is_reply?'reply-block':''}" open><summary>${i+1} · ${escapeHTML(slot.label)} ${escapeHTML(slot.author||'')} ${escapeHTML(slot.published||'')} ${post.saved_translations[slot.key]?'· 已有译文':''}</summary><div class="original-text">${escapeHTML(slot.text||'手动截图，请对照右侧原图')}</div>${slot.emojis?.length?`<p class="hint">本段表情顺序：${escapeHTML(slot.emojis.join(' '))}</p>`:''}</details>`).join('');
- $('#editor').innerHTML=`<div class="card-heading"><h2>一次填写完整译文</h2><span class="badge">${labels[post.status]}</span></div><p class="editor-title">${escapeHTML(post.title)}</p><p class="note">${escapeHTML(post.note)}</p><p class="hint" id="post-comment-counts">${escapeHTML(commentCountText(post.comment_counts))}</p><label>关联 QQ 群<select id="post-group">${groups}</select></label><div class="original-blocks">${originals}</div><form id="translation-form"><label>烤制方式<select id="translation-mode"><option value="full">完整烤制 · 覆盖最新版本</option><option value="append" ${post.has_saved_version?'':'disabled'}>补充烤制 · 复用已有译文</option></select></label><p class="hint" id="translation-targets"></p><label>完整译文<textarea id="translation-body" rows="12" maxlength="50000" placeholder="正文译文&#10;&#10;+&#10;&#10;第一条评论译文"></textarea></label><p class="hint">独立一行 + 分隔。/e 顺序引用本版块原文的表情，可连续写 /e/e。补充模式只填写待补译评论。</p><button class="primary full" type="submit">生成翻译图片 →</button></form><p class="hint">成功后只保留最新烤制存档；失败不会覆盖上一次成功版本。</p>`;
+ const originals=post.slots.map((slot,i)=>`<details class="original-block ${slot.is_reply?'reply-block':''}" open><summary>${i+1} · ${escapeHTML(slot.label)} ${escapeHTML(slot.author||'')} ${escapeHTML(slot.published||'')} ${(post.translations[slot.key]||post.saved_translations[slot.key])==='/k'?'· 已跳过译文':(post.translations[slot.key]||post.saved_translations[slot.key])?'· 已有译文':''}</summary><div class="original-text">${escapeHTML(slot.text||'手动截图，请对照右侧原图')}</div>${slot.emojis?.length?`<p class="hint">本段表情顺序：${escapeHTML(slot.emojis.join(' '))}</p>`:''}</details>`).join('');
+ $('#editor').innerHTML=`<div class="card-heading"><h2>一次填写完整译文</h2><span class="badge">${labels[post.status]}</span></div><p class="editor-title">${escapeHTML(post.title)}</p><p class="note">${escapeHTML(post.note)}</p><p class="hint" id="post-comment-counts">${escapeHTML(commentCountText(post.comment_counts))}</p><label>关联 QQ 群<select id="post-group">${groups}</select></label><div class="original-blocks">${originals}</div><form id="translation-form"><label>烤制方式<select id="translation-mode"><option value="full">完整烤制 · 覆盖最新版本</option><option value="append" ${post.has_saved_version?'':'disabled'}>补充烤制 · 复用已有译文</option></select></label><p class="hint" id="translation-targets"></p><label>完整译文<textarea id="translation-body" rows="12" maxlength="50000" placeholder="正文译文&#10;&#10;+&#10;&#10;第一条评论译文"></textarea></label><p class="hint">独立一行 + 分隔。/e 顺序引用本版块原文的表情，可连续写 /e/e。无需翻译的版块单独填 /k，原文保留。补充模式只填写待补译评论。</p><button class="primary full" type="submit">生成翻译图片 →</button></form><p class="hint">成功后只保留最新烤制存档；失败不会覆盖上一次成功版本。</p>`;
  const setMode=()=>{
   const append=$('#translation-mode').value==='append';
   const targets=append?post.slots.filter(slot=>!post.saved_translations[slot.key]):post.slots;
@@ -45,7 +66,7 @@ function showPost(post){
 }
 function showPreview(mode){if(!activePost)return;const output=mode==='output'&&activePost.output_url;$('#preview').innerHTML=`<img src="${escapeHTML(output||activePost.original_url)}" alt="${output?'译文合成图':'原始截图'}">`;$('#show-original').classList.toggle('active',!output);$('#show-output').classList.toggle('active',!!output);$('#preview-toolbar').textContent=output?'译文已插入原图 · 请核对全部文字、emoji 和评论':'原始截图 · 可切换翻译成图对照查看';$('#preview-footer').innerHTML=`<span class="local-dot"></span><span>${output?labels[activePost.status]:'原始截图'} · 档案 ${escapeHTML(activePost.id)}</span><a class="secondary" download="${escapeHTML(activePost.id)}.png" href="${escapeHTML(output||activePost.original_url)}">下载 PNG ↓</a>${activePost.output_url?'<button class="secondary" id="send-current">发送到关联 QQ 群</button>':''}`;if($('#send-current'))$('#send-current').addEventListener('click',()=>task('正在发送图片到 QQ…',async()=>{await api('/api/posts/'+activePost.id+'/send','POST',{});toast('QQ 已确认发送成功。');}));}
 async function submitTranslation(event){event.preventDefault();let body=$('#translation-body').value;if($('#translation-mode').value==='append')body='+\n'+body;await task('正在排版生成翻译图…',async()=>{const post=await api('/api/posts/'+activePost.id+'/render','POST',{body});showPost(post);await loadStatus();toast('最新翻译图片已生成并保存。');});}
-async function init(){try{csrf=(await api('/api/session')).csrf;await loadSettings();await loadStatus();}catch(e){toast(e.message,true);}}
+async function init(){try{await establishSession();await loadSettings();await loadStatus();}catch(e){toast(e.message,true);}}
 $$('.nav').forEach(el=>el.addEventListener('click',()=>switchTab(el.dataset.tab)));
 $$('[data-source]').forEach(el=>el.addEventListener('click',()=>switchSource(el.dataset.source)));
 $('#refresh').addEventListener('click',()=>task('正在刷新…',async()=>{await loadStatus();await loadArchive();await loadMembers();toast('状态已刷新。');}));
@@ -80,5 +101,5 @@ $('#watermark-group').addEventListener('change',()=>loadWatermark().catch(e=>toa
 $$('[data-watermark-position]').forEach(button=>button.addEventListener('click',()=>setWatermarkPosition(Number(button.dataset.watermarkPosition))));
 $('#wm-outline').addEventListener('change',()=>$('#wm-outline-fields').hidden=!$('#wm-outline').checked);
 $('#save-watermark').addEventListener('click',()=>task('正在保存文字水印…',async()=>{await api('/api/watermark?group_id='+encodeURIComponent($('#watermark-group').value),'PUT',{changes:watermarkChanges()});await loadWatermark();toast('水印设置已保存，重新生成图片后生效。');}));
-$('#preview-watermark').addEventListener('click',()=>task('正在预览文字水印…',async()=>{const response=await fetch('/api/watermark/preview?group_id='+encodeURIComponent($('#watermark-group').value),{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-wv-csrf':csrf},body:JSON.stringify({changes:watermarkChanges(),post_id:activePost?activePost.id:null})});if(!response.ok){const error=await response.json();throw new Error(error.detail||'预览失败');}const blob=await response.blob();if(watermarkPreviewURL)URL.revokeObjectURL(watermarkPreviewURL);watermarkPreviewURL=URL.createObjectURL(blob);const image=document.createElement('img');image.src=watermarkPreviewURL;image.alt='当前文字水印预览';$('#watermark-preview').replaceChildren(image);}));
+$('#preview-watermark').addEventListener('click',()=>task('正在预览文字水印…',async()=>{const response=await request('/api/watermark/preview?group_id='+encodeURIComponent($('#watermark-group').value),'POST',{changes:watermarkChanges(),post_id:activePost?activePost.id:null});if(!response.ok){const error=await response.json();throw new Error(error.detail||'预览失败');}const blob=await response.blob();if(watermarkPreviewURL)URL.revokeObjectURL(watermarkPreviewURL);watermarkPreviewURL=URL.createObjectURL(blob);const image=document.createElement('img');image.src=watermarkPreviewURL;image.alt='当前文字水印预览';$('#watermark-preview').replaceChildren(image);}));
 function commentCountText(counts){if(!counts)return '艺人评论数未读取；请重新读取网页动态。';const count=counts.artist;return '读取时的艺人评论数：'+(count?count.display+(count.approximate?'（约数）':''):'未识别')+(counts.warnings.length?' · 请检查计数选择器':'');}

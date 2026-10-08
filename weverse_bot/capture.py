@@ -11,7 +11,8 @@ from . import store
 from .page_cleanup import (reject_optional_consent, remove_site_chrome,
                            ensure_author_visible, prepare_emoji_text)
 from .capture_layout import read_comment_counts, add_count_row, measure_card, screenshot_card
-from .artist_comments import collect_artist_comments, stage_comment, decoration, TEXT, AUTHOR
+from .artist_comments import (collect_artist_comments, stage_comment, decoration, TEXT, AUTHOR,
+                              artist_avatar_sources, ensure_comment_avatar, avatar_source)
 
 
 def weverse_url(raw, feed=False):
@@ -203,14 +204,20 @@ class Browser:
             expected = counts['artist']['value']
             if expected != len(items) - 1:
                 raise ValueError(f'网页显示 {expected} 条艺人评论，本次仅读取 {len(items)-1} 条。已停止，避免译文错配；请检查展开状态或评论列表加载。')
+        avatar_sources = await artist_avatar_sources(root, cfg['author_selector'], native) if native else {}
         fragments, slots, offset = [], [], 0
         gap = 0 if native else round(16 * await page.evaluate('devicePixelRatio'))
         css_width = await root.evaluate('el=>el.getBoundingClientRect().width')
         for index, (card, text_selector, label, author_selector, metadata) in enumerate(items):
             if metadata:
                 await card.scroll_into_view_if_needed()
+                # Let the source viewer replace a lazy placeholder after scrolling.
+                await page.wait_for_timeout(100)
+                fresh_avatar = await avatar_source(card, AUTHOR, '.comment-item-_-image_area img')
+                if fresh_avatar['src'] and fresh_avatar['author']:
+                    avatar_sources[fresh_avatar['author']] = fresh_avatar['src']
                 card = await stage_comment(page, metadata, css_width,
-                                           f'艺人评论 · {len(native)}' if index == 1 else '')
+                                           f'艺人评论 · {len(native)}' if index == 1 else '', avatar_sources)
             text_node = card.locator(text_selector)
             if await text_node.count() != 1:
                 raise ValueError(f'{label}原文选择器必须匹配且仅匹配一个完整文本块。')
@@ -235,6 +242,12 @@ class Browser:
                     if (!img.complete || !img.naturalWidth) throw new Error('image incomplete');
                 }
             }''')
+            if metadata:
+                await ensure_comment_avatar(card)
+            elif native:
+                main_avatar = await avatar_source(root, cfg['author_selector'], '.avatar-decorator-_-image img, .community-artist-postId-_-header img')
+                if main_avatar['author'] and main_avatar['src']:
+                    avatar_sources[main_avatar['author']] = main_avatar['src']
             await page.evaluate('document.fonts.ready')
             if await text_node.evaluate('(el) => el.scrollHeight > el.clientHeight + 3'):
                 raise ValueError(f'{label}正文区域无法完整显示表情，请检查正文高度或手动截图。')

@@ -20,6 +20,7 @@ from .qq import qq
 
 SESSION = secrets.token_urlsafe(32)
 CSRF = secrets.token_urlsafe(32)
+
 from .locks import workflow_lock as operation_lock
 from .render import compose
 from .translations import render_body, latest_context
@@ -28,10 +29,28 @@ monitor_state = {'state': '未启用', 'last_run': None, 'last_error': ''}
 monitor_wakeup = asyncio.Event()
 
 
+def media_url(path):
+    if not path:
+        return None
+    until = str(int(time.time()) + 12 * 3600)
+    url = '/media/' + path
+    signature = hmac.new(SESSION.encode(), (url + '\n' + until).encode(), 'sha256').hexdigest()
+    return f'{url}?until={until}&signature={signature}'
+
+
+def valid_media_link(request):
+    if not request.url.path.startswith('/media/') or request.method not in ('GET', 'HEAD'):
+        return False
+    until = request.query_params.get('until', '')
+    if not re.fullmatch(r'[0-9]{10}', until) or not 0 <= int(until) - time.time() <= 12 * 3600:
+        return False
+    expected = hmac.new(SESSION.encode(), (request.url.path + '\n' + until).encode(), 'sha256').hexdigest()
+    return hmac.compare_digest(request.query_params.get('signature', ''), expected)
+
 def serialize(post):
     post = dict(post)
-    post['original_url'] = '/media/' + post['original']
-    post['output_url'] = '/media/' + post['output'] if post['output'] else None
+    post['original_url'] = media_url(post['original'])
+    post['output_url'] = media_url(post['output'])
     post['comment_counts'] = post['slots'][0].get('comment_counts') if post['slots'] else None
     latest, saved, changed = latest_context(post)
     post['has_saved_version'] = bool(latest)
@@ -121,7 +140,11 @@ async def local_auth(request: Request, call_next):
     if request.url.path.startswith(('/api/', '/media/')):
         if request.headers.get('sec-fetch-site') == 'cross-site':
             return JSONResponse({'detail': '只允许本机管理页面访问。'}, status_code=403)
-        if not hmac.compare_digest(request.cookies.get('wv_session', ''), SESSION):
+        authenticated = (hmac.compare_digest(request.headers.get('x-wv-session', ''), SESSION) or
+                         hmac.compare_digest(request.cookies.get('wv_session', ''), SESSION) or
+                         valid_media_link(request))
+        bootstrap = request.url.path == '/api/bootstrap' and request.method == 'GET'
+        if not bootstrap and not authenticated:
             return JSONResponse({'detail': '请先打开本机 WebUI 首页。'}, status_code=401)
         if request.method not in ('GET', 'HEAD') and not hmac.compare_digest(request.headers.get('x-wv-csrf', ''), CSRF):
             return JSONResponse({'detail': '页面已过期，请刷新后重试。'}, status_code=403)
@@ -155,6 +178,18 @@ async def manual():
 @app.get('/api/session')
 async def session():
     return {'csrf': CSRF}
+
+
+@app.get('/api/bootstrap')
+async def bootstrap(request: Request):
+    # A same-origin custom-header request works even when the browser refuses
+    # local Cookies. Cross-origin scripts cannot pass the CORS preflight.
+    origin = request.headers.get('origin')
+    if request.headers.get('x-wv-bootstrap') != '1' or (origin and origin != str(request.base_url).rstrip('/')):
+        raise HTTPException(403, '请从本机工作台首页打开。')
+    response = JSONResponse({'session': SESSION, 'csrf': CSRF})
+    response.set_cookie('wv_session', SESSION, httponly=True, samesite='strict')
+    return response
 
 
 @app.get('/api/status')

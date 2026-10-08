@@ -1,0 +1,1 @@
+{"status": "passed", "flows": ["Cookie blocked: home + settings + original/translated images + download + watermark preview", "same stale page after server restart: unsaved input preserved, session re-established, save retried", "/k keeps original, persists in editor, next block translated"], "console_errors": [], "secrets_logged": false}
