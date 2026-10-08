@@ -14,7 +14,7 @@ from .page_cleanup import prepare_emoji_text
 FONT_URL = 'https://qqbot-font.invalid/local-font'
 HTML = '''<!doctype html><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
- content="default-src 'none'; style-src 'unsafe-inline'; font-src https://qqbot-font.invalid">
+ content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src https://qqbot-font.invalid">
 <style>
 html,body{margin:0;padding:0;background:transparent}
 #band{box-sizing:border-box;background:white}
@@ -57,6 +57,19 @@ async def _render(width, jobs, font_path):
                     raise ValueError('浏览器无法加载自定义字体，请清空字体路径使用系统字体，或选择可用的 TTF/OTF 字体。')
             images = []
             for job in jobs:
+                if job.get('native_card'):
+                    from .comment_image import render_comment
+                    raw = await render_comment(page, width, job['native_card'],
+                                               job.get('scale', 1), job.get('text', ''), str(path) if path.is_file() else '')
+                    with Image.open(io.BytesIO(raw)) as image:
+                        images.append(image.convert('RGB'))
+                    continue
+                # Native cards use a separate DOM. Restore the text renderer
+                # when a watermark/text job follows a comment.
+                if not await page.locator('#band').count():
+                    await page.set_content(HTML)
+                    if path.is_file():
+                        await page.evaluate('''async url=>{const f=await new FontFace('QQBotCustom',`url("${url}")`).load();document.fonts.add(f)}''',FONT_URL)
                 await page.evaluate('''({width, text, size, x, text_width, centered, color, outline_color, outline_width=0, font_family}) => {
                     const band = document.getElementById('band');
                     const p = document.getElementById('text');

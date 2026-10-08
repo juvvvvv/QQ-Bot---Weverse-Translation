@@ -94,15 +94,37 @@ async def measure_card(card, text_selector):
     }''', text_selector)
 
 
-async def screenshot_card(page, bounds):
+async def screenshot_card(page, bounds, card=None):
     height = min(bounds['h'], bounds['target_height'])
     if height <= 0 or bounds['content_bottom'] > bounds['h'] + 3:
         raise ValueError('动态内容超出了所选卡片范围，请重新校准卡片选择器。')
     if bounds['target_height'] * bounds['w'] * bounds['scale'] ** 2 > 24_000_000 or bounds['target_height'] * bounds['scale'] > 30000:
         raise ValueError('高清截图过大，请降低截图像素倍率或分批读取评论。')
-    raw = await page.screenshot(
-        full_page=True,
-        type='png', clip={'x': bounds['left'], 'y': bounds['top'], 'width': bounds['w'], 'height': height},
-        scale='device', animations='disabled', timeout=20000,
-    )
-    return raw
+    hidden = None
+    if card is not None:
+        hidden = await card.evaluate_handle('''el => {
+            const saved=[];
+            // Retain layout while excluding unrelated floating toolbar/login
+            // fragments. Consent stays visible and is handled by real refusal.
+            const consent='.fc-consent-root,[class*="_w_bottom_fixed_"],iframe';
+            for(let current=el;current && current!==document.body;current=current.parentElement){
+                for(const sibling of current.parentElement.children){
+                    if(sibling===current || sibling.matches('style,script,link') || sibling.matches(consent) || sibling.querySelector(consent))continue;
+                    saved.push([sibling,sibling.getAttribute('style')]);
+                    sibling.style.setProperty('visibility','hidden','important');
+                }
+            }
+            return saved;
+        }''')
+    try:
+        return await page.screenshot(
+            full_page=True,
+            type='png', clip={'x': bounds['left'], 'y': bounds['top'], 'width': bounds['w'], 'height': height},
+            scale='device', animations='disabled', timeout=20000,
+        )
+    finally:
+        if hidden is not None:
+            try:
+                await hidden.evaluate('''saved=>{for(const [el,style] of saved){if(style===null)el.removeAttribute('style');else el.setAttribute('style',style)}}''')
+            finally:
+                await hidden.dispose()

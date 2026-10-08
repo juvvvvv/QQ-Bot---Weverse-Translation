@@ -11,6 +11,7 @@ from . import store
 from .page_cleanup import (reject_optional_consent, remove_site_chrome,
                            ensure_author_visible, prepare_emoji_text)
 from .capture_layout import read_comment_counts, add_count_row, measure_card, screenshot_card
+from .comment_image import comment_model, render_comment
 from .artist_comments import (collect_artist_comments, stage_comment, decoration, TEXT, AUTHOR,
                               artist_avatar_sources, ensure_comment_avatar, avatar_source)
 
@@ -273,12 +274,27 @@ class Browser:
             # that origin at document (0, 0) before measuring document coordinates,
             # including cards taller than the viewport and comments further down.
             await page.evaluate('window.scrollTo(0,0)')
-            boxes = await measure_card(card, text_selector)
-            raw = await screenshot_card(page, boxes)
+            native_model = None
+            if metadata:
+                native_model = await comment_model(page, card, metadata,
+                                                   f'艺人评论 · {len(native)}' if index == 1 else '')
+                isolated = await page.context.new_page()
+                try:
+                    await isolated.set_viewport_size({'width': max(240, round(css_width)), 'height': 1000})
+                    raw = await render_comment(isolated, css_width, native_model)
+                    boxes = await measure_card(isolated.locator('#card'), '#original')
+                    boxes['target_height'] = boxes['h']
+                    boxes['padding'] = 16
+                finally:
+                    await isolated.close()
+            else:
+                boxes = await measure_card(card, text_selector)
+                raw = await screenshot_card(page, boxes, card)
             # An asynchronously arriving CMP must be rejected before accepting
             # pixels; recapture after it closes instead of saving a covered image.
-            if await reject_optional_consent(page):
-                raw = await screenshot_card(page, boxes)
+            if await reject_optional_consent(page) and not metadata:
+                boxes = await measure_card(card, text_selector)
+                raw = await screenshot_card(page, boxes, card)
             image = Image.open(io.BytesIO(raw)).convert('RGB')
             scale = image.width / boxes['w']
             wanted_height = round(boxes['target_height'] * scale)
@@ -304,6 +320,7 @@ class Browser:
                           'font_size': boxes['font_size'] * scale,
                           'scale': scale, 'bottom_padding': round(boxes['padding'] * scale),
                           'trailing_text': boxes['trailing_text'],
+                          **({'native_card': native_model, 'fragment_top': offset, 'fragment_height': image.height} if native_model else {}),
                           **({'comment_counts': counts} if index == 0 else {}),
                           'fingerprint': fingerprint, 'author': author,
                           'reusable': bool(store.memory(fingerprint, group))})

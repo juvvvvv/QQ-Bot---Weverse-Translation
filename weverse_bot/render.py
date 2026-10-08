@@ -39,6 +39,11 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
     else:
         with Image.open(original) as image:
             source = image.convert('RGB')
+    native = [slot for slot in slots if slot.get('native_card')]
+    if any('source_index' in slot and not slot.get('native_card') for slot in slots):
+        raise ValueError('评论截图来自旧版，请重新读取网址后再烤制；最新译文仍可复用。')
+    if native:
+        return compose_native(source, slots, translations, watermark, size, font_path)
     if len(translations) > 201 or sum(len(t) for t in translations.values()) > 50000:
         raise ValueError('单张图片最多 201 段翻译，合计最多 50000 字。')
     if set(translations) - {str(s['key']) for s in slots}:
@@ -103,6 +108,40 @@ def compose(original, slots, translations, watermark, size=24, font_path=''):
                         bottom_padding=slots[-1].get('bottom_padding', 0) if slots else 0)
     if result.height > 40000 or result.width * result.height > 48_000_000:
         raise ValueError('包含水印的图片过大，请降低像素倍率。')
+    return result
+
+
+def compose_native(source, slots, translations, watermark, size, font_path):
+    """Reflow each native card in DOM; never splice a white row into its text."""
+    if len(translations)>201 or sum(len(t) for t in translations.values())>50000:
+        raise ValueError('单张图片最多 201 段翻译，合计最多 50000 字。')
+    if set(translations)-{str(s['key']) for s in slots}:raise ValueError('翻译位置不存在。')
+    native=[s for s in slots if s.get('native_card')]
+    root_slots=[s for s in slots if not s.get('native_card')]
+    root_end=native[0]['fragment_top']
+    root=compose(source.crop((0,0,source.width,root_end)),root_slots,
+                 {k:v for k,v in translations.items() if k in {str(s['key']) for s in root_slots}},
+                 {'enabled':False},size,font_path)
+    translated=[s for s in native if translations.get(str(s['key']),'').strip() not in ('','/k')]
+    jobs=[{'native_card':s['native_card'],'text':translations[str(s['key'])], 'scale':s.get('scale',1)} for s in translated]
+    cfg=store.WATERMARK_DEFAULTS | (watermark if isinstance(watermark,dict) else {'text':watermark,'position':5})
+    scale=slots[0].get('scale',1)
+    mark_job=text_job(source.width,cfg,slots[0].get('font_size',size*scale),scale)
+    if mark_job:jobs.append(mark_job)
+    rendered=render_text_images(source.width,jobs,font_path)
+    mark=rendered.pop() if mark_job else None
+    baked={str(slot['key']):image for slot,image in zip(translated,rendered)}
+    fragments=[root]
+    for slot in native:
+        top=slot['fragment_top'];height=slot['fragment_height']
+        fragments.append(baked.get(str(slot['key']),source.crop((0,top,source.width,top+height))))
+    height=sum(image.height for image in fragments)
+    if height>40000 or source.width*height>48_000_000:raise ValueError('合成图片过长，请分批处理。')
+    result=Image.new('RGB',(source.width,height),'white')
+    y=0
+    for image in fragments:result.paste(image,(0,y));y+=image.height
+    result=apply_text(result,mark,cfg,scale,bottom_padding=slots[-1].get('bottom_padding',0))
+    if result.height>40000 or result.width*result.height>48_000_000:raise ValueError('包含水印的图片过大，请降低像素倍率。')
     return result
 
 

@@ -1,0 +1,151 @@
+/workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_all_white_photo_is_retained_by_geometry (test_capture_watermark.CaptureLayoutTests.test_all_white_photo_is_retained_by_geometry) ... ok
+test_bottom_spacing_adapts_to_text_length_without_fixed_height (test_capture_watermark.CaptureLayoutTests.test_bottom_spacing_adapts_to_text_length_without_fixed_height) ... ok
+test_hidpi_changes_pixels_not_css_layout_or_translation_position (test_capture_watermark.CaptureLayoutTests.test_hidpi_changes_pixels_not_css_layout_or_translation_position) ... ok
+test_missing_ambiguous_and_zero_counts_remain_distinct (test_capture_watermark.CaptureLayoutTests.test_missing_ambiguous_and_zero_counts_remain_distinct) ... ok
+test_website_counts_are_not_loaded_comment_count (test_capture_watermark.CaptureLayoutTests.test_website_counts_are_not_loaded_comment_count) ... ok
+test_count_formats_and_invalid_values (test_capture_watermark.TextWatermarkTests.test_count_formats_and_invalid_values) ... ok
+test_fill_color_and_outline_are_rendered (test_capture_watermark.TextWatermarkTests.test_fill_color_and_outline_are_rendered) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_capture_watermark.py:142: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  colors=set(result.getdata())
+ok
+test_font_and_transparency_follow_explicit_units (test_capture_watermark.TextWatermarkTests.test_font_and_transparency_follow_explicit_units) ... ok
+test_legacy_logo_is_not_rendered_or_deleted_and_new_defaults_are_used (test_capture_watermark.TextWatermarkTests.test_legacy_logo_is_not_rendered_or_deleted_and_new_defaults_are_used) ... ok
+test_nine_positions_use_requested_top_to_bottom_order (test_capture_watermark.TextWatermarkTests.test_nine_positions_use_requested_top_to_bottom_order) ... ok
+test_preview_does_not_save_settings_and_png_upload_is_removed (test_capture_watermark.TextWatermarkTests.test_preview_does_not_save_settings_and_png_upload_is_removed) ... ok
+test_watermark_is_last_once_after_main_and_comment_translations (test_capture_watermark.TextWatermarkTests.test_watermark_is_last_once_after_main_and_comment_translations) ... ok
+test_approximate_zero_is_not_treated_as_no_comments (test_comment_loading.LoadingTests.test_approximate_zero_is_not_treated_as_no_comments) ... ok
+test_cmp_iframe_is_rejected_before_the_cookie_bar_it_covers (test_comment_loading.LoadingTests.test_cmp_iframe_is_rejected_before_the_cookie_bar_it_covers) ... ok
+test_cookie_and_cmp_are_both_rejected (test_comment_loading.LoadingTests.test_cookie_and_cmp_are_both_rejected) ... ok
+test_cookie_bar_clicks_continue_not_optional_and_disappears (test_comment_loading.LoadingTests.test_cookie_bar_clicks_continue_not_optional_and_disappears) ... ok
+test_cookie_bar_does_not_cover_captured_media (test_comment_loading.LoadingTests.test_cookie_bar_does_not_cover_captured_media) ... ok
+test_cookie_without_reject_is_never_accepted_or_hidden (test_comment_loading.LoadingTests.test_cookie_without_reject_is_never_accepted_or_hidden) ... ok
+test_delayed_cookie_is_rejected_during_comment_loading (test_comment_loading.LoadingTests.test_delayed_cookie_is_rejected_during_comment_loading) ... ok
+test_delayed_header_and_list_produce_all_14_comments (test_comment_loading.LoadingTests.test_delayed_header_and_list_produce_all_14_comments) ... ok
+test_english_comment_timestamps_keep_chronology (test_comment_loading.LoadingTests.test_english_comment_timestamps_keep_chronology) ... ok
+test_english_cookie_bar_and_iframe_use_the_same_policy_region (test_comment_loading.LoadingTests.test_english_cookie_bar_and_iframe_use_the_same_policy_region) ... ok
+test_explicit_zero_is_distinct_from_missing_and_transient_zero (test_comment_loading.LoadingTests.test_explicit_zero_is_distinct_from_missing_and_transient_zero) ... ok
+test_partial_list_waits_for_the_remaining_comments (test_comment_loading.LoadingTests.test_partial_list_waits_for_the_remaining_comments) ... ok
+test_site_written_cookie_rejection_survives_browser_restart (test_comment_loading.LoadingTests.test_site_written_cookie_rejection_survives_browser_restart) ... ok
+test_unknown_count_times_out_and_preserves_successful_archive (test_comment_loading.LoadingTests.test_unknown_count_times_out_and_preserves_successful_archive) ... ok
+test_unknown_counter_is_not_accepted_even_with_visible_list (test_comment_loading.LoadingTests.test_unknown_counter_is_not_accepted_even_with_visible_list) ... ok
+test_language_independent_source_order_and_same_minute (test_comment_loading.OrderingTests.test_language_independent_source_order_and_same_minute) ... ok
+test_machine_dates_override_dom_and_handle_year_boundary (test_comment_loading.OrderingTests.test_machine_dates_override_dom_and_handle_year_boundary) ... ok
+test_url_language_and_share_parameters_are_still_removed (test_comment_loading.OrderingTests.test_url_language_and_share_parameters_are_still_removed) ... ok
+test_wait_setting_is_saved_and_validated (test_comment_loading.OrderingTests.test_wait_setting_is_saved_and_validated) ... ok
+test_home_always_refreshes_the_local_session_even_with_old_validators (test_consent_retry.HomeSessionTests.test_home_always_refreshes_the_local_session_even_with_old_validators) ... ok
+test_bottom_cookie_disabled_reject_still_never_selects_optional (test_consent_retry.RejectionRetryTests.test_bottom_cookie_disabled_reject_still_never_selects_optional) ... ok
+test_clipped_desktop_cmp_is_rejected_and_capture_width_restored (test_consent_retry.RejectionRetryTests.test_clipped_desktop_cmp_is_rejected_and_capture_width_restored) ... ok
+test_delayed_close_longer_than_old_five_second_limit (test_consent_retry.RejectionRetryTests.test_delayed_close_longer_than_old_five_second_limit) ... ok
+test_disabled_button_becomes_ready_after_old_click_limit (test_consent_retry.RejectionRetryTests.test_disabled_button_becomes_ready_after_old_click_limit) ... ok
+test_first_click_before_site_handler_is_ready_is_retried (test_consent_retry.RejectionRetryTests.test_first_click_before_site_handler_is_ready_is_retried) ... ok
+test_hidden_cmp_iframe_does_not_block_rejecting_bottom_cookie (test_consent_retry.RejectionRetryTests.test_hidden_cmp_iframe_does_not_block_rejecting_bottom_cookie) ... ok
+test_hidden_iframe_is_closed_even_though_its_dom_remains (test_consent_retry.RejectionRetryTests.test_hidden_iframe_is_closed_even_though_its_dom_remains) ... ok
+test_identical_buttons_are_checked_by_element_not_mutating_nth (test_consent_retry.RejectionRetryTests.test_identical_buttons_are_checked_by_element_not_mutating_nth) ... ok
+test_persistent_fixed_app_shell_is_not_mistaken_for_the_dialog (test_consent_retry.RejectionRetryTests.test_persistent_fixed_app_shell_is_not_mistaken_for_the_dialog) ... ok
+test_plain_prompt_inside_persistent_fixed_app_shell (test_consent_retry.RejectionRetryTests.test_plain_prompt_inside_persistent_fixed_app_shell) ... ok
+test_remaining_dedicated_backdrop_stops_capture (test_consent_retry.RejectionRetryTests.test_remaining_dedicated_backdrop_stops_capture) ... ok
+test_temporary_cover_retries_normal_click_without_forcing (test_consent_retry.RejectionRetryTests.test_temporary_cover_retries_normal_click_without_forcing) ... ok
+test_avatar_placeholders_and_hidden_styles_resolve_only_same_artist (test_preview4.LayoutAndConsentTests.test_avatar_placeholders_and_hidden_styles_resolve_only_same_artist) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_preview4.py:123: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  colors=set(before.getdata());self.assertIn((0,110,220),colors);self.assertIn((255,165,0),colors)
+ok
+test_central_choice_is_prioritized_even_if_bottom_is_not_covered (test_preview4.LayoutAndConsentTests.test_central_choice_is_prioritized_even_if_bottom_is_not_covered) ... ok
+test_comment_pseudo_curves_and_extra_icons_are_removed_but_toolbar_remains (test_preview4.LayoutAndConsentTests.test_comment_pseudo_curves_and_extra_icons_are_removed_but_toolbar_remains) ... ok
+test_explicit_fc_reject_class_is_independent_of_label_language (test_preview4.LayoutAndConsentTests.test_explicit_fc_reject_class_is_independent_of_label_language) ... ok
+test_fc_sibling_overlay_closes_before_cookie_choice (test_preview4.LayoutAndConsentTests.test_fc_sibling_overlay_closes_before_cookie_choice) ... ok
+test_main_toolbar_full_height_counts_even_when_svg_is_aria_hidden (test_preview4.LayoutAndConsentTests.test_main_toolbar_full_height_counts_even_when_svg_is_aria_hidden) ... ok
+test_missing_real_avatar_stops_instead_of_saving_blank_avatar (test_preview4.LayoutAndConsentTests.test_missing_real_avatar_stops_instead_of_saving_blank_avatar) ... ok
+test_original_lines_are_complete_before_comment_translation_insertion (test_preview4.LayoutAndConsentTests.test_original_lines_are_complete_before_comment_translation_insertion) ... ok
+test_remaining_fc_overlay_is_never_hidden_to_take_screenshot (test_preview4.LayoutAndConsentTests.test_remaining_fc_overlay_is_never_hidden_to_take_screenshot) ... ok
+test_cookie_free_session_headers_and_scoped_media_link (test_preview4.SkipAndSessionTests.test_cookie_free_session_headers_and_scoped_media_link) ... ok
+test_skip_all_keeps_original_size_and_pixels_and_is_a_successful_version (test_preview4.SkipAndSessionTests.test_skip_all_keeps_original_size_and_pixels_and_is_a_successful_version) ... ok
+test_skip_does_not_shift_following_translation_or_use_emoji (test_preview4.SkipAndSessionTests.test_skip_does_not_shift_following_translation_or_use_emoji) ... ok
+test_skip_is_reused_by_comment_id_and_can_be_overwritten_later (test_preview4.SkipAndSessionTests.test_skip_is_reused_by_comment_id_and_can_be_overwritten_later) ... ok
+test_watermark_is_arial_without_changing_translation_font (test_preview4.SkipAndSessionTests.test_watermark_is_arial_without_changing_translation_font) ... ok
+test_actual_anchors_remove_extra_icons_and_keep_single_original_before_translation (test_preview5.NativeLayoutTests.test_actual_anchors_remove_extra_icons_and_keep_single_original_before_translation) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_preview5.py:40: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  self.assertNotIn((255,0,204),set(original.getdata()))
+/workspace/QQ-Bot---Weverse-Translation/tests/test_preview5.py:45: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  self.assertNotIn((255,0,204),set(translated.getdata()))
+ok
+test_main_toolbar_preserved_without_unrelated_fixed_footer_and_styles_restored (test_preview5.NativeLayoutTests.test_main_toolbar_preserved_without_unrelated_fixed_footer_and_styles_restored) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_preview5.py:82: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  colors=set(image.getdata());self.assertNotIn((255,0,204),colors);self.assertIn((188,20,40),colors)
+ok
+test_reply_connector_is_continuous_through_long_translation_at_both_scales (test_preview5.NativeLayoutTests.test_reply_connector_is_continuous_through_long_translation_at_both_scales) ... ok
+test_skips_reuse_source_pixels_and_old_native_snapshots_require_fresh_read (test_preview5.NativeLayoutTests.test_skips_reuse_source_pixels_and_old_native_snapshots_require_fresh_read) ... ok
+test_commands_match_only_complete_start_word (test_v2.V2Tests.test_commands_match_only_complete_start_word) ... ok
+test_file_cleanup_failure_is_retained_for_retry (test_v2.V2Tests.test_file_cleanup_failure_is_retained_for_retry) ... ok
+test_old_boolean_permissions_migrate_without_losing_data (test_v2.V2Tests.test_old_boolean_permissions_migrate_without_losing_data) ... ok
+test_permanent_clear_removes_all_revisions_and_memories_but_preserves_other_group (test_v2.V2Tests.test_permanent_clear_removes_all_revisions_and_memories_but_preserves_other_group) ... ok
+test_permission_inheritance_and_owner_protection (test_v2.V2Tests.test_permission_inheritance_and_owner_protection) ... ok
+test_artist_counter_mismatch_stops_incomplete_export (test_v3.NativeCommentTests.test_artist_counter_mismatch_stops_incomplete_export) ... ok
+test_hidden_artist_counter_is_read_without_treating_it_as_zero (test_v3.NativeCommentTests.test_hidden_artist_counter_is_read_without_treating_it_as_zero) ... ok
+test_native_comments_disabled_and_zero_are_distinct (test_v3.NativeCommentTests.test_native_comments_disabled_and_zero_are_distinct) ... ok
+test_provided_14_comment_dom_captures_avatars_order_styles_and_emojis (test_v3.NativeCommentTests.test_provided_14_comment_dom_captures_avatars_order_styles_and_emojis) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_v3.py:142: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  self.assertIn((255,165,0),set(original.convert('RGB').getdata()))
+ok
+test_pipe_command_emoji_append_and_latest_only_over_onebot (test_v3.NewQQTests.test_pipe_command_emoji_append_and_latest_only_over_onebot) ... ok
+test_api_unified_input_and_total_count_removed (test_v3.TranslationTests.test_api_unified_input_and_total_count_removed) ... ok
+test_bad_count_and_render_failure_preserve_last_success (test_v3.TranslationTests.test_bad_count_and_render_failure_preserve_last_success) ... ok
+test_emoji_references_are_adjacent_local_and_preserve_urls (test_v3.TranslationTests.test_emoji_references_are_adjacent_local_and_preserve_urls) ... ok
+test_full_append_reorder_typo_correction_only_latest_survives (test_v3.TranslationTests.test_full_append_reorder_typo_correction_only_latest_survives) ... ok
+test_group_isolation_and_edited_original_require_full_bake (test_v3.TranslationTests.test_group_isolation_and_edited_original_require_full_bake) ... ok
+test_known_threads_group_and_unknown_replies_are_not_guessed (test_v3.TranslationTests.test_known_threads_group_and_unknown_replies_are_not_guessed) ... ok
+test_plus_is_a_line_delimiter_and_append_is_explicit (test_v3.TranslationTests.test_plus_is_a_line_delimiter_and_append_is_explicit) ... ok
+test_same_minute_uses_reverse_source_order_not_numeric_ids (test_v3.TranslationTests.test_same_minute_uses_reverse_source_order_not_numeric_ids) ... ok
+test_bad_image_and_position (test_workflow.ApiTests.test_bad_image_and_position) ... ok
+test_local_auth_csrf_and_host (test_workflow.ApiTests.test_local_auth_csrf_and_host) ... ok
+test_token_redaction_settings_and_missing_calibration (test_workflow.ApiTests.test_token_redaction_settings_and_missing_calibration) ... ok
+test_upload_render_download_and_archive_state (test_workflow.ApiTests.test_upload_render_download_and_archive_state) ... ok
+test_artist_filter_long_comments_and_history (test_workflow.BrowserTests.test_artist_filter_long_comments_and_history) ... Executing <Task pending name='Task-858' coro=<BrowserTests.test_artist_filter_long_comments_and_history() running at /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:389> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:181, ProtocolCallback.__init__.<locals>.cb() at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:264] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 1.452 seconds
+Executing <Task finished name='Task-858' coro=<BrowserTests.test_artist_filter_long_comments_and_history() done, defined at /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:381> result=None created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 1.542 seconds
+ok
+test_clipped_text_rejected (test_workflow.BrowserTests.test_clipped_text_rejected) ... ok
+test_consent_and_site_chrome_do_not_cover_author_or_media (test_workflow.BrowserTests.test_consent_and_site_chrome_do_not_cover_author_or_media) ... ok
+test_consent_in_iframe_is_rejected_even_when_frame_closes (test_workflow.BrowserTests.test_consent_in_iframe_is_rejected_even_when_frame_closes) ... ok
+test_consent_preference_survives_persistent_browser_restart (test_workflow.BrowserTests.test_consent_preference_survives_persistent_browser_restart) ... ok
+test_consent_without_rejection_is_not_accepted_or_hidden (test_workflow.BrowserTests.test_consent_without_rejection_is_not_accepted_or_hidden) ... ok
+test_delayed_consent_is_rejected (test_workflow.BrowserTests.test_delayed_consent_is_rejected) ... ok
+test_different_author_cannot_reuse_identical_comment (test_workflow.BrowserTests.test_different_author_cannot_reuse_identical_comment) ... Executing <Task pending name='Task-965' coro=<BrowserTests.test_different_author_cannot_reuse_identical_comment() running at /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:396> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:181, ProtocolCallback.__init__.<locals>.cb() at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:264] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 1.574 seconds
+Executing <Task finished name='Task-965' coro=<BrowserTests.test_different_author_cannot_reuse_identical_comment() done, defined at /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:393> result=None created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 1.425 seconds
+ok
+test_emoji_capture_keeps_width_media_and_insertion_below_original (test_workflow.BrowserTests.test_emoji_capture_keeps_width_media_and_insertion_below_original) ... ok
+test_emoji_graphemes_preserved_and_repeat_preparation_is_stable (test_workflow.BrowserTests.test_emoji_graphemes_preserved_and_repeat_preparation_is_stable) ... ok
+test_emoji_ink_fits_inside_tight_line_after_preparation (test_workflow.BrowserTests.test_emoji_ink_fits_inside_tight_line_after_preparation) ... ok
+test_hidden_author_is_not_saved_as_an_incomplete_screenshot (test_workflow.BrowserTests.test_hidden_author_is_not_saved_as_an_incomplete_screenshot) ... ok
+test_missing_avatar_is_not_saved_as_an_incomplete_screenshot (test_workflow.BrowserTests.test_missing_avatar_is_not_saved_as_an_incomplete_screenshot) ... Executing <Task pending name='Task-1035' coro=<Connection.run() running at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:348> created at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/async_api/_context_manager.py:37> took 0.102 seconds
+ok
+test_post_must_not_include_comment_list (test_workflow.BrowserTests.test_post_must_not_include_comment_list) ... ok
+test_rejection_does_not_allow_a_remaining_backdrop (test_workflow.BrowserTests.test_rejection_does_not_allow_a_remaining_backdrop) ... ok
+test_text_without_emoji_keeps_its_layout (test_workflow.BrowserTests.test_text_without_emoji_keeps_its_layout) ... Executing <Task pending name='Task-1068' coro=<Connection.run() running at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:348> created at /workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/playwright/async_api/_context_manager.py:37> took 0.135 seconds
+ok
+test_translation_aligns_with_original_and_preserves_entire_photo (test_workflow.BrowserTests.test_translation_aligns_with_original_and_preserves_entire_photo) ... ok
+test_unverified_author_rejected (test_workflow.BrowserTests.test_unverified_author_rejected) ... ok
+test_group_isolation_and_revocation (test_workflow.ImageTests.test_group_isolation_and_revocation) ... ok
+test_history_is_scoped_to_group (test_workflow.ImageTests.test_history_is_scoped_to_group) ... ok
+test_long_translation_and_blank_lines_expand_height (test_workflow.ImageTests.test_long_translation_and_blank_lines_expand_height) ... ok
+test_partial_completed_and_history_reuse (test_workflow.ImageTests.test_partial_completed_and_history_reuse) ... ok
+test_pixels_are_preserved_at_multiple_insertion_points (test_workflow.ImageTests.test_pixels_are_preserved_at_multiple_insertion_points) ... ok
+test_plain_translation_has_white_background_and_complete_color_emoji (test_workflow.ImageTests.test_plain_translation_has_white_background_and_complete_color_emoji) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:74: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  self.assertTrue(any(r > 180 and g > 100 and b < 120 for r, g, b in image.getdata()))
+ok
+test_qq_patch_preserves_other_translations (test_workflow.ImageTests.test_qq_patch_preserves_other_translations) ... ok
+test_text_watermark_is_faint_centered_and_adds_no_footer (test_workflow.ImageTests.test_text_watermark_is_faint_centered_and_adds_no_footer) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:95: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  self.assertLessEqual(max(channel for pixel in difference.getdata() for channel in pixel), 51)
+ok
+test_unknown_slot_and_empty_text_rejected (test_workflow.ImageTests.test_unknown_slot_and_empty_text_rejected) ... ok
+test_url_validation (test_workflow.ImageTests.test_url_validation) ... ok
+test_dedup_multi_group_and_new_comments (test_workflow.MonitorTests.test_dedup_multi_group_and_new_comments) ... ok
+test_failed_delivery_is_not_reported_as_success (test_workflow.QQTests.test_failed_delivery_is_not_reported_as_success) ... ok
+test_help_levels_and_plain_at_rejected (test_workflow.QQTests.test_help_levels_and_plain_at_rejected) ... ok
+test_level1_text_watermark_and_adjustment (test_workflow.QQTests.test_level1_text_watermark_and_adjustment) ... ok
+test_level2_clear_warehouse (test_workflow.QQTests.test_level2_clear_warehouse) ... Executing <Task pending name='Task-1300' coro=<QQTests.test_level2_clear_warehouse() running at /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:340> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:181] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 1.312 seconds
+ok
+test_level3_can_grant_and_revoke_and_disabled_group (test_workflow.QQTests.test_level3_can_grant_and_revoke_and_disabled_group) ... ok
+test_screenshot_and_one_step_roast_preserve_hashes (test_workflow.QQTests.test_screenshot_and_one_step_roast_preserve_hashes) ... ok
+test_view_always_original_and_removed_commands_ignored (test_workflow.QQTests.test_view_always_original_and_removed_commands_ignored) ... Executing <Task pending name='Task-1360' coro=<QQTests.test_view_always_original_and_removed_commands_ignored() running at /workspace/QQ-Bot---Weverse-Translation/tests/test_workflow.py:314> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/base_events.py:181] created at /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/runners.py:100> took 1.366 seconds
+ok
+
+----------------------------------------------------------------------
+Ran 120 tests in 516.170s
+
+OK

@@ -1,4 +1,4 @@
-# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview4
+# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview5
 
 给出 Weverse 网址和人工译文，保留原文，在原文下方插入中文，再拼接艺人评论，最后添加文字水印。无需 AI API Key。
 
@@ -7,11 +7,19 @@
 - [Windows 下载包](downloads/Weverse-QQ-Bot-Windows.zip)：解压后先运行 `首次安装.bat`，再运行 `启动工作台.bat`。
 - [Mac 上一版 preview3 下载包](downloads/Weverse-QQ-Bot-Mac.zip)：解压后先运行 `首次安装.command`，再运行 `启动工作台.command`。
 - [中文 HTML 说明书](docs/manual.html)：下载后可离线打开，工作台也有入口。
-- [Windows 本轮修复、升级和验证范围](docs/preview4-validation.md)。
+- [Windows 本轮修复、升级和验证范围](docs/preview5-validation.md)。
 
-已正常安装的项目：先关闭程序及登录浏览器，备份 `data`。同时替换 **weverse_bot、static、docs** 和对应系统两个启动文件、`run.py`；保留 `data` 与 `.venv`。本轮依赖未变化，不需要重装。首次启动自动增加新版存档表，旧登录、选择器、权限和水印保留。
+已正常安装的项目：先关闭程序及登录浏览器，备份 `data`。同时替换 **weverse_bot、static、docs** 和对应系统两个启动文件、`run.py`、`VERSION`、`requirements.txt`；保留 `data` 与 `.venv`。本轮依赖未变化，不需要重装。首次启动自动增加新版存档表，旧登录、选择器、权限和水印保留。
 
-## 最新修复（preview4，仅打包 Windows）
+## 最新修复（preview5，仅打包 Windows）
+
+- 评论使用独立的卡片排版，原文只出现一次；中文在完整原文下面，整体随译文变长，不再切开原文插入白色区域。
+- 楼中楼细线随卡片高度连续延伸；保留缩进、圆角框、身份标识、时间和正常互动栏。
+- 清除评论卡片之外的多余半截图标；动态截图排除其他页面区域的悬浮图形，动态自身点赞/评论栏保留。
+- **需要重新读取网址**，才会生成新版可重新排版的评论。旧版原生评论截图会提示重新读取，已有最新译文仍可复用。
+- 页面选择器、译文指令、`/k`、`/e`、顺序、图片宽度和 Arial 水印不变。依赖未变化，Mac ZIP 仍保留 preview3。
+
+## 上一版修复（preview4）
 
 - 修复评论头像占位与不可见问题，去除多余浅色曲线和半截互动图标；动态自身互动栏完整保留。
 - 评论原文容器完整展开后在末尾插入译文，保留全部原文并向下扩图，宽度和顺序不变。请重新读取网址，旧截图坐标不会自动更新。
