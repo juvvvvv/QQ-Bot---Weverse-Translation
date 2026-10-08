@@ -1,4 +1,4 @@
-# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview7
+# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview8
 
 给出 Weverse 艺人或粉丝原帖网址和人工译文，保留原文，在原文下方插入中文，再拼接艺人评论，最后添加文字水印。无需 AI API Key。
 
@@ -7,11 +7,18 @@
 - [Windows 下载包](downloads/Weverse-QQ-Bot-Windows.zip)：解压后先运行 `首次安装.bat`，再运行 `启动工作台.bat`。
 - [Mac 上一版 preview3 下载包](downloads/Weverse-QQ-Bot-Mac.zip)：解压后先运行 `首次安装.command`，再运行 `启动工作台.command`。
 - [中文 HTML 说明书](docs/manual.html)：下载后可离线打开，工作台也有入口。
-- [Windows 本轮修复、升级和验证范围](docs/preview7-validation.md)。
+- [Windows 本轮修复、升级和验证范围](docs/preview8-validation.md)。
 
 已正常安装的项目：先关闭程序及登录浏览器，备份 `data`。同时替换 **weverse_bot、static、docs** 和对应系统两个启动文件、`run.py`、`VERSION`、`requirements.txt`；保留 `data` 与 `.venv`。本轮依赖未变化，不需要重装。首次启动自动增加新版存档表，旧登录、选择器、权限和水印保留。
 
-## 最新修复（preview7，仅打包 Windows）
+## 最新修复（preview8，仅打包 Windows）
+
+- 多张配图全部加载并解码后再测量动态高度，互动栏随内容正常排在最后一张图下面。
+- 互动栏和图标不受旧页面的高度限制、收缩或 SVG 基线溢出影响；截图包含实际完整底边，点赞、评论数字和分享图标不被裁切。
+- 在互动栏下面保留底部留白，随后加译文和最终底部水印，配图与互动栏像素完整保留。
+- 页面校准、评论格式、译文指令和依赖无需更改。升级后重新读取网址，再烤制；保留 data 与 .venv。
+
+## 上一版修复（preview7）
 
 - 修复没有艺人评论的动态仍然等待计数而失败：动态已加载、没有实际艺人评论卡片且状态稳定时，只生成原帖；不再要求普通评论区域或艺人计数存在。空艺人标题/空列表也可处理，需要 1 段译文或 `/k`。
 - 移除原帖的“查看翻译 / See translation”等平台翻译入口，原文中的正常文字保留。

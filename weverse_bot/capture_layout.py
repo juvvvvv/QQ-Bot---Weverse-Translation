@@ -100,7 +100,10 @@ async def measure_card(card, text_selector):
 
 
 async def screenshot_card(page, bounds, card=None):
-    height = min(bounds['h'], bounds['target_height'])
+    # Small SVG/baseline overflow used to pass the tolerance below but was
+    # nevertheless clipped to the root height. Include its actual paint extent
+    # and round upward, also at fractional media heights / pixel scales.
+    height = math.ceil(max(min(bounds['h'], bounds['target_height']), bounds['content_bottom']))
     if height <= 0 or bounds['content_bottom'] > bounds['h'] + 3:
         raise ValueError('动态内容超出了所选卡片范围，请重新校准卡片选择器。')
     if bounds['target_height'] * bounds['w'] * bounds['scale'] ** 2 > 24_000_000 or bounds['target_height'] * bounds['scale'] > 30000:

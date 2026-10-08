@@ -1,0 +1,3 @@
+/workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+{"status": "passed", "flows": ["真实样本粉丝原帖+两条艺人评论三段译文", "双配图长动态一段译文和/k", "读取评论数2/0正确展示", "中文在完整原文之后", "多图底部完整互动栏10K+/2.1K保留", "查看翻译入口已移除", "成图下载", "错误段数保留成功版本"], "console_errors": []}

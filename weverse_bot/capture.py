@@ -287,7 +287,15 @@ class Browser:
                         new Promise(r => setTimeout(r,10000))
                     ]);
                     if (!img.complete || !img.naturalWidth) throw new Error('image incomplete');
+                    await img.decode();
                 }
+                // All media have their intrinsic sizes now. Give the browser
+                // the next paint before measuring the footer of a long post.
+                // Background login-browser tabs may suspend animation frames.
+                await Promise.race([
+                    new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))),
+                    new Promise(r => setTimeout(r,100))
+                ]);
             }''')
             if metadata:
                 await ensure_comment_avatar(card)
