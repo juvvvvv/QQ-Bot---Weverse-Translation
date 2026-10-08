@@ -321,7 +321,7 @@ async def prepare_emoji_text(text_node):
 
 async def ensure_author_visible(card, author):
     """Keep the real author header/avatar, including the responsive layout."""
-    header = card.locator('.community-artist-postId-_-header')
+    header = card.locator('.community-artist-postId-_-header, .community-fanpost-postId-_-header')
     if await header.count() == 1 and not await header.is_visible():
         await header.evaluate('''el => {
             el.style.setProperty('display', 'block', 'important');

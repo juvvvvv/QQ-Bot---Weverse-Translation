@@ -6,11 +6,12 @@ import sys
 import uuid
 from urllib.parse import urlsplit, urlunsplit
 from PIL import Image
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Error as BrowserError, TimeoutError as BrowserTimeout
 from . import store
 from .page_cleanup import (reject_optional_consent, remove_site_chrome,
                            ensure_author_visible, prepare_emoji_text)
 from .capture_layout import read_comment_counts, add_count_row, measure_card, screenshot_card
+from .post_adapter import adapt_post
 from .comment_image import comment_model, render_comment
 from .artist_comments import (collect_artist_comments, stage_comment, decoration, TEXT, AUTHOR,
                               artist_avatar_sources, ensure_comment_avatar, avatar_source)
@@ -35,11 +36,30 @@ class Browser:
         self.last_error = ''
         self.login_state = '尚未验证'
         self.mode = None
+        self.phase = '尚未读取'
+
+    async def reset_connection(self):
+        context,pw=self.context,self.pw
+        self.context=self.pw=None
+        self.mode=None
+        if context:
+            try:await context.close()
+            except BrowserError:pass
+        if pw:
+            try:await pw.stop()
+            except BrowserError:pass
 
     async def open(self, headed=False):
         mode = ('headed' if headed else 'headless', store.settings()['capture_scale'])
         if self.context and self.mode == mode:
-            return self.context
+            try:
+                # A retained Python handle can outlive a browser closed by the
+                # user. Probe the connection, without logging any Cookie data.
+                await self.context.cookies()
+                return self.context
+            except BrowserError:
+                await self.reset_connection()
+                store.event('浏览器连接已失效，正在自动恢复；登录资料保留。')
         if self.context:
             await self.context.close()
             self.context = None
@@ -56,13 +76,22 @@ class Browser:
 
     async def close(self):
         async with self.lock:
-            if self.context:
-                await self.context.close()
-                self.context = None
-            if self.pw:
-                await self.pw.stop()
-                self.pw = None
-            self.mode = None
+            await self.reset_connection()
+
+    @staticmethod
+    async def close_page(page):
+        if not page:return
+        tasks=list(getattr(page,'_wv_response_tasks',set()))
+        for task in tasks:task.cancel()
+        if tasks:await asyncio.gather(*tasks,return_exceptions=True)
+        try:await page.close()
+        except BrowserError:pass
+
+    @staticmethod
+    def recoverable(exc):
+        return isinstance(exc,BrowserTimeout) or (isinstance(exc,BrowserError) and any(
+            text in str(exc) for text in ('has been closed','Connection closed','Browser closed',
+                                         'net::ERR_CONNECTION_RESET','net::ERR_ABORTED','net::ERR_TIMED_OUT')))
 
     async def login(self):
         if sys.platform not in ('darwin', 'win32') and not __import__('os').environ.get('DISPLAY'):
@@ -114,7 +143,7 @@ class Browser:
             await reject_optional_consent(page, wait_ms=2000)
             return page
         except Exception:
-            await page.close()
+            await self.close_page(page)
             raise
 
     async def capture(self, url, group=''):
@@ -123,35 +152,47 @@ class Browser:
         if not all(cfg[k] for k in ('post_selector','text_selector','artist_selector','author_selector')):
             raise ValueError('网页抓取尚未校准。请在设置中填写帖子、原文、艺人标识和作者 CSS 选择器；也可以先上传截图。')
         async with self.lock:
-            page = None
-            try:
-                page = await self.ready_page(url)
-                return await self.extract(page, url, group, cfg)
-            except ValueError as exc:
-                self.last_error = str(exc)
-                raise
-            except Exception as exc:
-                self.last_error = '网页读取失败，请检查网络、浏览器安装、登录和 CSS 选择器。'
-                store.event(f'网页读取失败（{type(exc).__name__}），请在 Mac 检查登录或页面校准', 'error')
-                raise ValueError(self.last_error) from exc
-            finally:
-                if page:
-                    await page.close()
+            for attempt in range(2):
+                page=None
+                self.phase='网页打开'
+                try:
+                    page=await self.ready_page(url)
+                    post=await self.extract(page,url,group,cfg)
+                    self.last_error=''
+                    return post
+                except ValueError as exc:
+                    self.last_error=str(exc)
+                    raise
+                except Exception as exc:
+                    if attempt==0 and self.recoverable(exc):
+                        await self.close_page(page);page=None
+                        store.event(f'{self.phase}时连接中断或超时，自动恢复浏览器并重试一次。','warning')
+                        await self.reset_connection()
+                        continue
+                    hint='网页或图片加载超时，请检查网络后重试。' if isinstance(exc,BrowserTimeout) else '网页读取失败，请查看运行日志中的阶段和错误类型。'
+                    self.last_error=f'{self.phase}：{hint}'
+                    store.event(f'网页读取失败 · 阶段：{self.phase} · 类型：{type(exc).__name__}；设置与成功译文已保留。','error')
+                    raise ValueError(self.last_error) from exc
+                finally:
+                    await self.close_page(page)
 
     async def extract(self, page, url, group, cfg):
-        """Capture only explicitly matched artist cards. Never guess badge classes."""
+        """Capture a recognized original post and verified artist comments."""
         await reject_optional_consent(page)
+        self.phase='原帖识别'
+        cfg=await adapt_post(page,cfg)
         root = page.locator(cfg['post_selector'])
         try:
             await root.first.wait_for(state='visible', timeout=15000)
         except Exception as exc:
+            if self.recoverable(exc) and not isinstance(exc,BrowserTimeout):raise
             if await page.locator('input[type=password]').count() or 'account.weverse.io' in page.url:
                 self.login_state = '登录失效，请重新登录'
                 raise ValueError(self.login_state) from exc
             raise ValueError('未找到帖子。可能需要登录，或 CSS 选择器已变化，请重新校准。') from exc
         if await root.count() != 1:
             raise ValueError('帖子选择器必须只匹配一个帖子卡片。请缩小选择器范围。')
-        if not await root.locator(cfg['artist_selector']).count():
+        if cfg.get('post_kind')!='fan' and not await root.locator(cfg['artist_selector']).count():
             raise ValueError('未找到艺人标识，停止抓取。请确认这是 From PLAVE 艺人帖子，并校准标识选择器。')
         await remove_site_chrome(page)
         if cfg['expand_selector']:
@@ -178,15 +219,18 @@ class Browser:
         items = [(root, cfg['text_selector'], '正文', cfg['author_selector'], {})]
         native = []
         if cfg.get('capture_artist_comments', True):
+            self.phase='艺人评论读取'
             native = await collect_artist_comments(page, cfg, getattr(page, '_wv_parents', {}))
             tasks = list(getattr(page, '_wv_response_tasks', set()))
             if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+                try:
+                    await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True),timeout=5)
+                except asyncio.TimeoutError:pass
                 native = await collect_artist_comments(page, cfg, getattr(page, '_wv_parents', {}))
         if native:
             for record in native:
                 items.append((record['card'], TEXT, f"艺人评论 {len(items)}", AUTHOR, record))
-        elif cfg['comment_selector'] and cfg.get('capture_artist_comments', True):
+        elif cfg['comment_selector'] and cfg.get('capture_artist_comments', True) and not getattr(page,'_wv_native_ready',False):
             if await root.locator(cfg['comment_selector']).count():
                 raise ValueError('帖子卡片包含评论列表，会造成重复截图；请重新校准帖子卡片范围。')
             if not cfg['comment_text_selector']:
@@ -205,11 +249,12 @@ class Browser:
             expected = counts['artist']['value']
             if expected != len(items) - 1:
                 raise ValueError(f'网页显示 {expected} 条艺人评论，本次仅读取 {len(items)-1} 条。已停止，避免译文错配；请检查展开状态或评论列表加载。')
-        avatar_sources = await artist_avatar_sources(root, cfg['author_selector'], native) if native else {}
+        avatar_sources = await artist_avatar_sources(root, cfg['author_selector'], native, include_main=cfg.get('post_kind')!='fan') if native else {}
         fragments, slots, offset = [], [], 0
         gap = 0 if native else round(16 * await page.evaluate('devicePixelRatio'))
         css_width = await root.evaluate('el=>el.getBoundingClientRect().width')
         for index, (card, text_selector, label, author_selector, metadata) in enumerate(items):
+            self.phase=f'{label}图片读取'
             if metadata:
                 await card.scroll_into_view_if_needed()
                 # Let the source viewer replace a lazy placeholder after scrolling.
@@ -245,7 +290,7 @@ class Browser:
             }''')
             if metadata:
                 await ensure_comment_avatar(card)
-            elif native:
+            elif native and cfg.get('post_kind')!='fan':
                 main_avatar = await avatar_source(root, cfg['author_selector'], '.avatar-decorator-_-image img, .community-artist-postId-_-header img')
                 if main_avatar['author'] and main_avatar['src']:
                     avatar_sources[main_avatar['author']] = main_avatar['src']
@@ -267,6 +312,7 @@ class Browser:
                 raise ValueError(f'{label}没有可插入译文的正文，请手动截图指定位置。')
             # Consent can also appear late, after media/fonts finish loading.
             # Dismiss it before measuring the final screenshot/translation coordinates.
+            self.phase=f'{label}截图'
             await reject_optional_consent(page)
             if index == 0 and not native:
                 await add_count_row(card, counts)
@@ -321,7 +367,7 @@ class Browser:
                           'scale': scale, 'bottom_padding': round(boxes['padding'] * scale),
                           'trailing_text': boxes['trailing_text'],
                           **({'native_card': native_model, 'fragment_top': offset, 'fragment_height': image.height} if native_model else {}),
-                          **({'comment_counts': counts} if index == 0 else {}),
+                          **({'comment_counts': counts, 'post_kind':cfg.get('post_kind','artist')} if index == 0 else {}),
                           'fingerprint': fingerprint, 'author': author,
                           'reusable': bool(store.memory(fingerprint, group))})
             fragments.append(image)

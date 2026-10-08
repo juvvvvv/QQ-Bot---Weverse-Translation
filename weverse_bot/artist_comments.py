@@ -69,10 +69,40 @@ def order_comments(records):
     return result
 
 
+async def ordinary_region_snapshot(page):
+    """Evidence for zero artist comments from the supplied ordinary-only DOM."""
+    if await page.locator('.base-comment-artist-count-and-toggle-_-container,' + LIST).count():
+        return None
+    candidates=page.locator('.comment-total-count-and-refresh-_-container')
+    snapshots=[]
+    from .capture_layout import parse_count
+    for i in range(await candidates.count()):
+        header=candidates.nth(i)
+        if not await header.is_visible():continue
+        snapshot=await header.evaluate(r'''el=>{
+            const region=el.closest('.comment-shape-by-item-type-_-container');
+            const list=region?.querySelector('.wrap_comment_list');
+            const visible=n=>n.getClientRects().length && getComputedStyle(n).display!=='none' && getComputedStyle(n).visibility!=='hidden';
+            if(!region || !list || !visible(list))return null;
+            if(region.matches('[aria-busy="true"]') || [...region.querySelectorAll('[aria-busy="true"],[role="progressbar"],[class*="skeleton"],[class*="loading"]')].some(visible))return null;
+            const cards=[...list.querySelectorAll('.comment-item-_-container')];
+            if(cards.some(c=>c.querySelector('svg g[id="24/em/ic_officialbadge_special_medium"]')))return null;
+            if(cards.some(c=>!c.getAttribute('data-wev-comment-id') || !c.querySelector('.comment-item-header-profile-name-_-name')?.textContent.trim() || !c.querySelector('.line-clamp-node-view-_-container')?.textContent.trim()))return null;
+            return {count:el.querySelector('.comment-total-count-and-refresh-_-count')?.textContent,
+                    ids:cards.map(c=>c.getAttribute('data-wev-comment-id')),text:list.textContent};
+        }''')
+        if snapshot:
+            count=parse_count(snapshot['count'] or '')
+            if count and not count['approximate'] and (snapshot['ids'] or count['value']==0):snapshots.append(snapshot)
+    return json.dumps(snapshots[0],sort_keys=True) if len(snapshots)==1 else None
+
+
 async def collect_artist_comments(page, cfg, api_parents=None):
     """Wait for the artist region, not a fixed sleep or one empty DOM lookup."""
     from .capture_layout import read_comment_counts
     from .page_cleanup import reject_optional_consent
+    page._wv_comment_zero = None
+    page._wv_native_ready = False
     deadline = time.monotonic() + cfg.get('comment_wait_seconds', 30)
     listing = None
     raw = []
@@ -96,9 +126,11 @@ async def collect_artist_comments(page, cfg, api_parents=None):
         if len(visible) > 1:
             raise ValueError('匹配到多个可见艺人评论列表，请检查页面。')
         listing = visible[0] if visible else None
+        ordinary_snapshot = await ordinary_region_snapshot(page) if count is None else None
+        ordinary_header = await page.locator('.comment-total-count-and-refresh-_-container').count()
         # Preserve explicitly configured legacy adapters. The default native
         # path must never interpret a missing list/counter as zero comments.
-        if not await containers.count() and count is None and cfg.get('comment_selector'):
+        if not await containers.count() and count is None and not ordinary_header and cfg.get('comment_selector'):
             legacy = page.locator(cfg['comment_selector'])
             if await legacy.count():
                 return []
@@ -142,11 +174,16 @@ async def collect_artist_comments(page, cfg, api_parents=None):
         # An explicit, stable zero is different from a missing counter.
         if count is not None and not count['approximate'] and expected == 0 and not raw and not busy:
             ready = True
+        if ordinary_snapshot:
+            expected = 0
+            ready = True
         if ready:
-            key = (expected, tuple((r['comment_id'], r['published'], r['snapshot']) for r in raw))
+            key = (expected, ordinary_snapshot, tuple((r['comment_id'], r['published'], r['snapshot']) for r in raw))
             if key != stable_key:
                 stable_key, stable_since = key, time.monotonic()
-            if time.monotonic() - stable_since >= (1.0 if expected == 0 else .4):
+            if time.monotonic() - stable_since >= (2.0 if ordinary_snapshot else 1.0 if expected == 0 else .4):
+                if ordinary_snapshot:page._wv_comment_zero = ordinary_snapshot
+                page._wv_native_ready = True
                 break
         else:
             stable_key = None
@@ -210,11 +247,12 @@ async def avatar_source(card, author_selector, image_selector):
     }''', {'author':author_selector,'image':image_selector})
 
 
-async def artist_avatar_sources(root, author_selector, records):
+async def artist_avatar_sources(root, author_selector, records, include_main=True):
     sources = {}
-    main = await avatar_source(root, author_selector, '.avatar-decorator-_-image img, .community-artist-postId-_-header img')
-    if main['author'] and main['src']:
-        sources[main['author']] = main['src']
+    if include_main:
+        main = await avatar_source(root, author_selector, '.avatar-decorator-_-image img, .community-artist-postId-_-header img')
+        if main['author'] and main['src']:
+            sources[main['author']] = main['src']
     for record in records:
         avatar = await avatar_source(record['card'], AUTHOR, '.comment-item-_-image_area img')
         record['avatar_author'] = avatar['author']

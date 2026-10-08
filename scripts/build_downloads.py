@@ -39,9 +39,9 @@ def quickstart(platform):
 
 本轮：自动读取艺人评论；单一译文框；独立一行 + 分段；/e 顺序引用本段表情；补充新评论；仅保存最新成功版本。
 新水印默认 8（中下），旧配置位置保留。如希望底部水印，请在面板改为 8 后保存并重新生成。
-本次修复：评论原文只出现一次，中文单独排在完整原文下方并扩长卡片；楼中楼细线连续；排除多余半截图标和小箭头。正常点赞和评论数保留。/k、/e、Arial 水印、自动拒绝隐私提示和本机会话恢复继续可用。
+本次更新：支持粉丝原帖，仅追加艺人评论；没有艺人评论只填一段正文译文或 /k；浏览器失效时自动恢复，连接中断或超时最多重试一次。正文及评论原文下方中文、楼中楼、图宽、互动栏、/e、Arial 水印、自动拒绝隐私提示保持。四个页面校准值无需切换。
 旧截图不会自动改变，请重新读取帖子再烤制；最新已存译文可继续复用。
-详细更新步骤：docs/preview5-validation.md。
+详细更新步骤：docs/preview6-validation.md。
 '''
 
 
@@ -67,7 +67,7 @@ def build(platform):
         assert archive.testzip() is None
         names = {name[len(prefix):] for name in archive.namelist()}
         required = {'run.py', 'requirements.txt', 'docs/manual.html', 'static/app.js',
-                    'weverse_bot/translations.py', 'weverse_bot/artist_comments.py', 'weverse_bot/comment_image.py',
+                    'weverse_bot/translations.py', 'weverse_bot/artist_comments.py', 'weverse_bot/comment_image.py', 'weverse_bot/post_adapter.py',
                     *PLATFORMS[platform]}
         assert required <= names
         for other in PLATFORMS:

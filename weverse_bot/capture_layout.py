@@ -35,13 +35,17 @@ async def read_comment_counts(page, cfg):
                 result['warnings'].append(f'{field} 无法唯一读取计数，请校准计数元素。')
         except Exception:
             result['warnings'].append(f'{field} 无法读取，请检查选择器。')
+    if result['artist'] is None and getattr(page, '_wv_comment_zero', None):
+        from .artist_comments import ordinary_region_snapshot
+        if await ordinary_region_snapshot(page) == page._wv_comment_zero:
+            result['artist'] = {'display':'0','value':0,'approximate':False,'source':'stable-ordinary-region'}
     return result
 
 
 async def add_count_row(card, counts):
     parts = []
     for key, label in (('artist', '艺人评论'),):
-        if counts[key] is not None:
+        if counts[key] is not None and counts[key]['value'] > 0:
             parts.append(f"{label} {counts[key]['display']}")
     if parts:
         await card.evaluate('''(el, text) => {

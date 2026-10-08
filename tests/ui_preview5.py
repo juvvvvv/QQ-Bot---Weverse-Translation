@@ -85,7 +85,7 @@ async def run(base, artifacts, store):
         old_path=store.DATA/latest['output']
         await page.locator('#translation-body').fill((await page.locator('#translation-body').input_value()).replace('正文','正文订正',1))
         await page.locator('#translation-form button').click()
-        await expect(page.locator('#busy')).to_be_hidden()
+        await expect(page.locator('#busy')).to_be_hidden(timeout=60000)
         assert store.latest_rendered(url,'123456')['translations']['0']=='正文订正🙂'
         assert not old_path.exists()
         await page.screenshot(path=str(artifacts/'统一输入与最新存档.png'),full_page=True)
