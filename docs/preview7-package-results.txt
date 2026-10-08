@@ -1,0 +1,3 @@
+downloads/Weverse-QQ-Bot-Windows.zip: 1065643 bytes, SHA256 a6c375349e2af945c9cb01ad2797b5ca8e21c4a42c160e3ed9b11010094929bf
+OK: Windows only; CRC, Python syntax and platform launch files checked. Other packages unchanged.
+Windows extracted shared program startup on Linux: home no-store + authenticated settings + updated HTML manual passed

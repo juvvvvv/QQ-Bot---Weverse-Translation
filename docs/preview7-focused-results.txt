@@ -1,0 +1,16 @@
+/workspace/QQ-Bot---Weverse-Translation/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_absent_artist_and_normal_regions_allow_original_skip_and_translation (test_preview7.OriginalTests.test_absent_artist_and_normal_regions_allow_original_skip_and_translation) ... ok
+test_busy_panel_and_broken_artist_counter_still_stop (test_preview7.OriginalTests.test_busy_panel_and_broken_artist_counter_still_stop) ... ok
+test_empty_artist_title_and_list_without_counter_do_not_block_original (test_preview7.OriginalTests.test_empty_artist_title_and_list_without_counter_do_not_block_original) ... ok
+test_fan_original_without_any_comment_region_is_one_segment (test_preview7.OriginalTests.test_fan_original_without_any_comment_region_is_one_segment) ... ok
+test_inside_action_bar_is_copied_once_without_deleting_original_text (test_preview7.OriginalTests.test_inside_action_bar_is_copied_once_without_deleting_original_text) ... /workspace/QQ-Bot---Weverse-Translation/tests/test_preview7.py:123: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  self.assertNotIn((255,0,204),set(image.getdata()))
+ok
+test_late_artist_region_after_four_seconds_is_not_omitted (test_preview7.OriginalTests.test_late_artist_region_after_four_seconds_is_not_omitted) ... ok
+test_main_toolbar_precedes_artist_section_and_ui_labels_disappear (test_preview7.OriginalTests.test_main_toolbar_precedes_artist_section_and_ui_labels_disappear) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 50.468s
+
+OK

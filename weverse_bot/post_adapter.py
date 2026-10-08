@@ -29,9 +29,20 @@ async def adapt_post(page, cfg):
         wrap.style.cssText=`font-size:${style.fontSize};font-family:${style.fontFamily};line-height:${style.lineHeight}`;
         viewer.insertBefore(wrap,prefix[0]);wrap.append(...prefix);
     }''')
-    actions=page.locator('.community-fanpost-postId-_-action_bar .toolbar-_-container')
-    if await actions.count()==1 and not await root.locator('[data-wvbot-owned-toolbar]').count():
-        handle=await actions.element_handle()
+    return cfg | {'post_selector':FAN_MAIN,'text_selector':'[data-wvbot-fan-text]',
+                  'author_selector':'.community-fanpost-postId-_-header .avatar-decorator-_-title','post_kind':'fan'}
+
+
+async def place_post_toolbar(page, root, kind='artist'):
+    """Put the original post's external action bar into its screenshot flow."""
+    if await root.locator('[data-wvbot-owned-toolbar]').count():return
+    prefix=f'.community-{"fanpost" if kind=="fan" else "artist"}-postId-_-action_bar'
+    actions=page.locator(prefix+'_inner .toolbar-_-container,'+prefix+' .toolbar-_-container')
+    visible=[actions.nth(i) for i in range(await actions.count()) if await actions.nth(i).is_visible()]
+    if len(visible)>1:raise ValueError('匹配到多个动态互动栏，已停止截图以免使用错误的点赞评论数。')
+    if visible:
+        source=visible[0]
+        handle=await source.element_handle()
         try:
             await root.evaluate('''(el,source)=>{
                 const wrap=document.createElement('div');wrap.dataset.wvbotOwnedToolbar='';wrap.style.marginTop='16px';
@@ -39,8 +50,12 @@ async def adapt_post(page, cfg):
                 for(const child of toolbar.querySelectorAll('.toolbar-_-left,.toolbar-_-right'))child.style.cssText='position:static!important;display:flex!important;gap:16px!important;height:auto!important;transform:none!important;';
                 const colors=[...source.querySelectorAll('button')].map(n=>getComputedStyle(n).color);
                 [...toolbar.querySelectorAll('button')].forEach((n,i)=>{n.style.cssText=`position:static!important;display:inline-flex!important;align-items:center!important;gap:6px!important;color:${colors[i]}!important;background:transparent!important;border:0!important;margin:0!important;padding:0!important;`;});
+                if(el.contains(source)){
+                    let original=source.closest('.community-artist-postId-_-action_bar,.community-fanpost-postId-_-action_bar');
+                    if(!original || !el.contains(original))original=source.closest('.community-artist-postId-_-action_bar_inner,.community-fanpost-postId-_-action_bar_inner');
+                    if(!original || !el.contains(original))original=source;
+                    original.style.setProperty('display','none','important');
+                }
                 wrap.append(toolbar);el.append(wrap);
             }''',handle)
         finally:await handle.dispose()
-    return cfg | {'post_selector':FAN_MAIN,'text_selector':'[data-wvbot-fan-text]',
-                  'author_selector':'.community-fanpost-postId-_-header .avatar-decorator-_-title','post_kind':'fan'}

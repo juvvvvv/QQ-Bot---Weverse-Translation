@@ -11,7 +11,7 @@ from . import store
 from .page_cleanup import (reject_optional_consent, remove_site_chrome,
                            ensure_author_visible, prepare_emoji_text)
 from .capture_layout import read_comment_counts, add_count_row, measure_card, screenshot_card
-from .post_adapter import adapt_post
+from .post_adapter import adapt_post, place_post_toolbar
 from .comment_image import comment_model, render_comment
 from .artist_comments import (collect_artist_comments, stage_comment, decoration, TEXT, AUTHOR,
                               artist_avatar_sources, ensure_comment_avatar, avatar_source)
@@ -249,6 +249,7 @@ class Browser:
             expected = counts['artist']['value']
             if expected != len(items) - 1:
                 raise ValueError(f'网页显示 {expected} 条艺人评论，本次仅读取 {len(items)-1} 条。已停止，避免译文错配；请检查展开状态或评论列表加载。')
+        await place_post_toolbar(page,root,cfg.get('post_kind','artist'))
         avatar_sources = await artist_avatar_sources(root, cfg['author_selector'], native, include_main=cfg.get('post_kind')!='fan') if native else {}
         fragments, slots, offset = [], [], 0
         gap = 0 if native else round(16 * await page.evaluate('devicePixelRatio'))

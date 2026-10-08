@@ -36,9 +36,10 @@ async def read_comment_counts(page, cfg):
         except Exception:
             result['warnings'].append(f'{field} 无法读取，请检查选择器。')
     if result['artist'] is None and getattr(page, '_wv_comment_zero', None):
-        from .artist_comments import ordinary_region_snapshot
-        if await ordinary_region_snapshot(page) == page._wv_comment_zero:
-            result['artist'] = {'display':'0','value':0,'approximate':False,'source':'stable-ordinary-region'}
+        from .artist_comments import zero_artist_snapshot
+        if await zero_artist_snapshot(page,cfg) == page._wv_comment_zero:
+            result['artist'] = {'display':'0','value':0,'approximate':False,'source':
+                                'absent-artist-region' if page._wv_comment_zero.startswith('absent:') else 'stable-ordinary-region'}
     return result
 
 

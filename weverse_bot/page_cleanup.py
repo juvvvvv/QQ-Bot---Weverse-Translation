@@ -24,7 +24,11 @@ CONSENT_TITLE = re.compile(
 SITE_CHROME = '''
 .global-_-header,
 .global-header-_-container,
-.login-required-bottom-layer-_-login_required_wrap {
+.login-required-bottom-layer-_-login_required_wrap,
+.community-artist-postId-_-translate,
+.community-fanpost-postId-_-translate,
+.translate-button-_-container,
+.comment-item-_-translate {
     display: none !important;
 }
 '''
@@ -257,7 +261,7 @@ async def _reject_prompts(page, wait_ms, viewport):
 
 
 async def remove_site_chrome(page):
-    """Hide identified site navigation and the floating login invitation only."""
+    """Hide site navigation, login invitations and built-in translation controls."""
     await page.add_style_tag(content=SITE_CHROME)
 
 

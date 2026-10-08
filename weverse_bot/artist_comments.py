@@ -97,6 +97,34 @@ async def ordinary_region_snapshot(page):
     return json.dumps(snapshots[0],sort_keys=True) if len(snapshots)==1 else None
 
 
+async def zero_artist_snapshot(page, cfg):
+    """Recognize no artist comments on loaded originals, including empty regions."""
+    ordinary=await ordinary_region_snapshot(page)
+    if ordinary:return 'ordinary:'+ordinary
+    # An empty title/list may remain even when there are no artist comments.
+    # Artist card markup with an unreadable counter must still stop.
+    if await page.locator(CARD+' '+BADGE).count():
+        return None
+    root=page.locator(cfg['post_selector'])
+    if await root.count()!=1 or not await root.is_visible():return None
+    text=root.locator(cfg['text_selector'])
+    author=root.locator(cfg['author_selector'])
+    if await text.count()!=1 or await author.count()!=1 or not await text.is_visible():return None
+    original=(await text.inner_text()).strip()
+    if not original or not (await author.text_content() or '').strip():return None
+    state=await page.evaluate(r'''()=>{
+        const visible=n=>n.getClientRects().length && getComputedStyle(n).display!=='none' && getComputedStyle(n).visibility!=='hidden';
+        const regions=[...document.querySelectorAll('.comment-shape-by-item-type-_-container,.community-artist-postId-_-aside,.community-fanpost-postId-_-aside,.base-comment-artist-count-and-toggle-_-container,.comment-list-by-artists-_-comment_list')];
+        const busy='[aria-busy="true"],[role="progressbar"],[class*="skeleton"],[class*="loading"]';
+        if(document.readyState==='loading' || document.body.getAttribute('aria-busy')==='true' ||
+           document.documentElement.getAttribute('aria-busy')==='true' ||
+           regions.some(el=>el.matches('[aria-busy="true"]') || [...el.querySelectorAll(busy)].some(visible)))return null;
+        return regions.filter(visible).map(el=>el.innerText);
+    }''')
+    if state is None:return None
+    return 'absent:'+json.dumps({'original':original,'regions':state},sort_keys=True)
+
+
 async def collect_artist_comments(page, cfg, api_parents=None):
     """Wait for the artist region, not a fixed sleep or one empty DOM lookup."""
     from .capture_layout import read_comment_counts
@@ -126,7 +154,7 @@ async def collect_artist_comments(page, cfg, api_parents=None):
         if len(visible) > 1:
             raise ValueError('匹配到多个可见艺人评论列表，请检查页面。')
         listing = visible[0] if visible else None
-        ordinary_snapshot = await ordinary_region_snapshot(page) if count is None else None
+        zero_snapshot = await zero_artist_snapshot(page,cfg) if count is None else None
         ordinary_header = await page.locator('.comment-total-count-and-refresh-_-container').count()
         # Preserve explicitly configured legacy adapters. The default native
         # path must never interpret a missing list/counter as zero comments.
@@ -174,15 +202,18 @@ async def collect_artist_comments(page, cfg, api_parents=None):
         # An explicit, stable zero is different from a missing counter.
         if count is not None and not count['approximate'] and expected == 0 and not raw and not busy:
             ready = True
-        if ordinary_snapshot:
+        if zero_snapshot:
             expected = 0
             ready = True
         if ready:
-            key = (expected, ordinary_snapshot, tuple((r['comment_id'], r['published'], r['snapshot']) for r in raw))
+            key = (expected, zero_snapshot, tuple((r['comment_id'], r['published'], r['snapshot']) for r in raw))
             if key != stable_key:
                 stable_key, stable_since = key, time.monotonic()
-            if time.monotonic() - stable_since >= (2.0 if ordinary_snapshot else 1.0 if expected == 0 else .4):
-                if ordinary_snapshot:page._wv_comment_zero = ordinary_snapshot
+            absent_wait=min(5.0,max(3.0,cfg.get('comment_wait_seconds',30)-.5))
+            wait = (absent_wait if zero_snapshot and zero_snapshot.startswith('absent:') else
+                    2.0 if zero_snapshot else 1.0 if expected == 0 else .4)
+            if time.monotonic() - stable_since >= wait:
+                if zero_snapshot:page._wv_comment_zero = zero_snapshot
                 page._wv_native_ready = True
                 break
         else:
