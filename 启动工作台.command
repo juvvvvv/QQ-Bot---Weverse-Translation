@@ -20,7 +20,7 @@ for _ in range(40):
     try:
         with urllib.request.urlopen('http://127.0.0.1:8800/',timeout=1) as r:
             if r.status==200:
-                webbrowser.open('http://127.0.0.1:8800/')
+                webbrowser.open('http://127.0.0.1:8800/?fresh=' + str(time.time_ns()))
                 break
     except Exception:
         time.sleep(.5)

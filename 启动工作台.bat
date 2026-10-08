@@ -27,7 +27,7 @@ if not errorlevel 1 goto port_busy
 rem Open the workbench only after its local HTTP server responds.
 set "BROWSER_PYTHON=%VENV_PYTHON%"
 if exist ".venv\Scripts\pythonw.exe" set "BROWSER_PYTHON=.venv\Scripts\pythonw.exe"
-start "" /b "%BROWSER_PYTHON%" -c "exec('import time, urllib.request, webbrowser\nopener = urllib.request.build_opener(urllib.request.ProxyHandler({}))\nfor _ in range(40):\n    try:\n        with opener.open(\'http://127.0.0.1:8800/\', timeout=1) as response:\n            if response.status == 200:\n                webbrowser.open(\'http://127.0.0.1:8800/\')\n                break\n    except Exception:\n        time.sleep(0.5)')"
+start "" /b "%BROWSER_PYTHON%" -c "exec('import time, urllib.request, webbrowser\nopener = urllib.request.build_opener(urllib.request.ProxyHandler({}))\nfor _ in range(40):\n    try:\n        with opener.open(\'http://127.0.0.1:8800/\', timeout=1) as response:\n            if response.status == 200:\n                webbrowser.open(\'http://127.0.0.1:8800/?fresh=\' + str(time.time_ns()))\n                break\n    except Exception:\n        time.sleep(0.5)')"
 
 echo 工作台地址：http://127.0.0.1:8800
 echo 请保持本窗口打开，并保持电脑运行。关闭工作台时按 Ctrl+C。

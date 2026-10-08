@@ -130,7 +130,7 @@ async def local_auth(request: Request, call_next):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'same-origin'
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'"
-    if request.url.path.startswith('/api/'):
+    if request.url.path == '/' or request.url.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-store'
     return response
 

@@ -1,4 +1,4 @@
-# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview2
+# PLAVE · Weverse QQ 翻译工作台 3.0.0-preview3
 
 给出 Weverse 网址和人工译文，保留原文，在原文下方插入中文，再拼接艺人评论，最后添加文字水印。无需 AI API Key。
 
@@ -7,11 +7,17 @@
 - [Windows 下载包](downloads/Weverse-QQ-Bot-Windows.zip)：解压后先运行 `首次安装.bat`，再运行 `启动工作台.bat`。
 - [Mac 下载包](downloads/Weverse-QQ-Bot-Mac.zip)：解压后先运行 `首次安装.command`，再运行 `启动工作台.command`。
 - [中文 HTML 说明书](docs/manual.html)：下载后可离线打开，工作台也有入口。
-- [Windows 最新修复、升级和验证范围](docs/preview2-validation.md)。
+- [最新修复、升级和验证范围](docs/preview3-validation.md)。
 
 已正常安装的项目：先关闭程序及登录浏览器，备份 `data`。同时替换 **weverse_bot、static、docs** 和对应系统两个启动文件、`run.py`；保留 `data` 与 `.venv`。本轮依赖未变化，不需要重装。首次启动自动增加新版存档表，旧登录、选择器、权限和水印保留。
 
-## 最新修复（preview2）
+## 最新修复（preview3）
+
+- 中央同意弹窗和底部 Cookie 条自动分别拒绝。修复固定外层残留造成误判、隐藏 iframe 未关闭的误判、按钮被裁到屏幕外，以及暂时遮挡和延迟可用的点击失败；每个提示最多等待 15 秒。
+- 网站实际写入的拒绝偏好保留在 `data/browser`；网站再次询问时重新自动拒绝，不承诺网站永久不弹窗。
+- 首页禁止缓存，两个平台的启动器每次打开新参数首页，修复重启后反复要求先打开 WebUI 首页的问题。
+
+## 上一版修复（preview2）
 
 - 自动拒绝你提供的底部 Cookie 条，明确点“不同意并继续”，确认整条关闭；与中央 consent 弹窗同时出现也逐个处理。类名中的 deny 对应“可选同意”，不会按它猜测拒绝。
 - 等待计数和完整艺人评论加载后截图，默认 30 秒，设置中可调 5–120 秒。未知、缺少评论或超时会停止，保留最新成功存档。

@@ -1,0 +1,6 @@
+downloads/Weverse-QQ-Bot-Windows.zip: 969867 bytes, SHA256 abf815400ac545e1512c3b377cba7a6b7d5e91a3e144376de6c2df6802f2fae6
+downloads/Weverse-QQ-Bot-Mac.zip: 967015 bytes, SHA256 16773f5825895370153f4458199c98196eb0a6707dec837de199df75bcfd3982
+OK: 71 shared files identical; CRC, Python syntax, launch files and permissions checked.
+Windows extracted shared program startup on Linux: home no-store + authenticated settings + updated HTML manual passed
+Mac extracted shared program startup on Linux: home no-store + authenticated settings + updated HTML manual passed
+Windows and Mac launcher browser-opening Python payloads executed with mocked ready HTTP responses: fresh query generated. Windows .bat and Mac OS shell wrapper installation not executed on native OS.
